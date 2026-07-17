@@ -1,0 +1,371 @@
+{
+    "Version":  "0.1.0",
+    "GeneratedUtc":  "2026-07-15T01:35:21.6391132Z",
+    "Files":  [
+                  {
+                      "Path":  "Generated/Data/Maps/0.map.manifest.json",
+                      "Size":  467460,
+                      "Sha256":  "ada29a72613510af567ac60c4f18e0b30fc251c28fd930fd73d1be152fa98a5e"
+                  },
+                  {
+                      "Path":  "Generated/Data/System/items.manifest.json",
+                      "Size":  543927,
+                      "Sha256":  "96a0a27374d2f396dbcd3bda2a0d14c4afc1327e9908c69fd85f032733ddded1"
+                  },
+                  {
+                      "Path":  "Generated/Data/System/magics.manifest.json",
+                      "Size":  83923,
+                      "Sha256":  "4ec1d0565e3f89ce90816028322dce9932853b3b962584f6d54095e5af76f1b5"
+                  },
+                  {
+                      "Path":  "Generated/Data/System/maps.manifest.json",
+                      "Size":  40334,
+                      "Sha256":  "663fcf7fa4c8677d35a41b99db3ee5bbea814d55fe21e5f8de312504f56da3b7"
+                  },
+                  {
+                      "Path":  "Generated/Data/System/npc-pages.manifest.json",
+                      "Size":  564522,
+                      "Sha256":  "70dfb1138aa48edb268808054a072b196189766dfd474223822cb29a84774e0a"
+                  },
+                  {
+                      "Path":  "Generated/Data/System/quests.manifest.json",
+                      "Size":  45091,
+                      "Sha256":  "47718a0214fca4b9563368b7556c055daf197bf24c1cfab4190d717a6c0eade4"
+                  },
+                  {
+                      "Path":  "Generated/Textures/Inventory/Inventory.manifest.json",
+                      "Size":  2481629,
+                      "Sha256":  "ee40b95735bb6044f628738363d740deda66047e089b9892490b0aeeb4652b51"
+                  },
+                  {
+                      "Path":  "Generated/Textures/Inventory/Inventory_00000_image.png",
+                      "Size":  567,
+                      "Sha256":  "72637195d042ad89f71af5170c6fc392b9d1e2c57e634e78ad9221f741f20359"
+                  },
+                  {
+                      "Path":  "Generated/Textures/Inventory/Inventory_00001_image.png",
+                      "Size":  798,
+                      "Sha256":  "4c28bde6e829cd4c412ef6023b3610a35a43ddf78c69ddfbde8bd13854ce87e1"
+                  },
+                  {
+                      "Path":  "Generated/Textures/Inventory/Inventory_00002_image.png",
+                      "Size":  509,
+                      "Sha256":  "c1a4eb01f02eb727e3ee72ea1125ed6e0d559392084168bd75b658c91ed4736a"
+                  },
+                  {
+                      "Path":  "Generated/Textures/Inventory/Inventory_00003_image.png",
+                      "Size":  809,
+                      "Sha256":  "c615af7d9270b85da47acae08748a3dc4ab1ae250e68c154e296a28c63084460"
+                  },
+                  {
+                      "Path":  "Generated/Textures/Inventory/Inventory_00004_image.png",
+                      "Size":  1197,
+                      "Sha256":  "88be1a7bdd2b0339d019d3e3a190e7dcc65d601c686518666bbe4a2f45d8cd1c"
+                  },
+                  {
+                      "Path":  "Generated/Textures/Inventory/Inventory_00005_image.png",
+                      "Size":  635,
+                      "Sha256":  "7e6603c101f1082efbba16a5b10c0fc12f7b19f4fc10670e085836d4b14adaa1"
+                  },
+                  {
+                      "Path":  "Generated/Textures/Inventory/Inventory_00006_image.png",
+                      "Size":  840,
+                      "Sha256":  "04b0abea933b6a5570ee46da304b654bb6fe88a9d3ae9449a18928b9fe610bd9"
+                  },
+                  {
+                      "Path":  "Generated/Textures/Inventory/Inventory_00007_image.png",
+                      "Size":  978,
+                      "Sha256":  "ce630d046d149081d6da80c7b6e366f80353e49cefa6eb3726992828d6e2f84f"
+                  },
+                  {
+                      "Path":  "Generated/Textures/Inventory/Inventory_00008_image.png",
+                      "Size":  1097,
+                      "Sha256":  "ca8c85362c0c99b0539c7384b81d7b0563c062f9869b1adcdbb9c92ddc3ad12a"
+                  },
+                  {
+                      "Path":  "Generated/Textures/Inventory/Inventory_00009_image.png",
+                      "Size":  1190,
+                      "Sha256":  "ee9bacc503a6ff76ae88a156be5155f83b4c425bb51a93687c24eb88ca3415dc"
+                  },
+                  {
+                      "Path":  "Generated/Textures/Inventory/Inventory_00010_image.png",
+                      "Size":  555,
+                      "Sha256":  "fd1b73d5109bfeb0e0cfbc292bd3e43326ee80998eb1eaa0ed159460dca4da9d"
+                  },
+                  {
+                      "Path":  "Generated/Textures/Inventory/Inventory_00011_image.png",
+                      "Size":  812,
+                      "Sha256":  "a20ac92b4385d1be2ec6ff98ffaa4bdb1863eeed07d6f532577249091a93d7df"
+                  },
+                  {
+                      "Path":  "Generated/Textures/Inventory/Inventory_00012_image.png",
+                      "Size":  494,
+                      "Sha256":  "eedde3be979bf1cfb7eb8018b93dcae9d1eb2fd1e41ecd218f499b78c522ac5b"
+                  },
+                  {
+                      "Path":  "Generated/Textures/Inventory/Inventory_00013_image.png",
+                      "Size":  806,
+                      "Sha256":  "0dbd28d68a1a99cb37106d5ab5721fdfaf68f3b6119f737d522d07ed5d62ad37"
+                  },
+                  {
+                      "Path":  "Generated/Textures/Inventory/Inventory_00014_image.png",
+                      "Size":  1180,
+                      "Sha256":  "354d942f3206c2575a918e840dae32cacf5495d005b3b0437f0b50a52a9e7849"
+                  },
+                  {
+                      "Path":  "Generated/Textures/Inventory/Inventory_00015_image.png",
+                      "Size":  623,
+                      "Sha256":  "809883f6f207bd2f539f5c59c569f33e29ebefa521c2915ee5cb53a0df5dde76"
+                  },
+                  {
+                      "Path":  "Generated/Textures/MapData/Tiles30c/Tiles30c.manifest.json",
+                      "Size":  440156,
+                      "Sha256":  "7a0e2949e0ae17b5db60016162a02019705236ce864143b8b976a5adbdca3751"
+                  },
+                  {
+                      "Path":  "Generated/Textures/MapData/Tiles30c/Tiles30c_00720_image.png",
+                      "Size":  9023,
+                      "Sha256":  "41b19ca80a78342e0a0dd00895abf4637534714cf1af937c6338d9e20c047673"
+                  },
+                  {
+                      "Path":  "Generated/Textures/MapData/Tiles30c/Tiles30c_00721_image.png",
+                      "Size":  9148,
+                      "Sha256":  "89a5d73932c8543fa8c2fa1de22a19e5a575eeb2250f5cfe77def861146d2243"
+                  },
+                  {
+                      "Path":  "Generated/Textures/MapData/Tiles30c/Tiles30c_00722_image.png",
+                      "Size":  9134,
+                      "Sha256":  "ba82cb374fc7d464d840d477eab0d1e7de41de54292d4feeb794ad4435476ff7"
+                  },
+                  {
+                      "Path":  "Generated/Textures/MapData/Tiles30c/Tiles30c_00723_image.png",
+                      "Size":  9031,
+                      "Sha256":  "5be4db252611da30b235095c239157db68a27842474cea421aa8cbfac6774272"
+                  },
+                  {
+                      "Path":  "Generated/Textures/MapData/Tiles30c/Tiles30c_00724_image.png",
+                      "Size":  8981,
+                      "Sha256":  "4bf7337132c83f22f08fcbc1ac3b343665334638bfee9886cf0252841e335434"
+                  },
+                  {
+                      "Path":  "Generated/Textures/M-Hum/M-Hum.manifest.json",
+                      "Size":  21822753,
+                      "Sha256":  "3cbdb83ef5e23e4c119b7742b83bdf52f93e0797a896cc06ba20100657626153"
+                  },
+                  {
+                      "Path":  "Generated/Textures/M-Hum/M-Hum_00000_image.png",
+                      "Size":  1616,
+                      "Sha256":  "281572b7a0b2fc9df4b29c5830a51439bed55661ee083c0c38196befdff28699"
+                  },
+                  {
+                      "Path":  "Generated/Textures/M-Hum/M-Hum_00001_image.png",
+                      "Size":  1605,
+                      "Sha256":  "3a08bbe0a3ddd85f090be6b26237ddac19ea7873f961456fc87f4bd987d987b3"
+                  },
+                  {
+                      "Path":  "Generated/Textures/M-Hum/M-Hum_00002_image.png",
+                      "Size":  1629,
+                      "Sha256":  "dae99dc0b51fa555575d72f5e83b56f264395b3bd4c4e0dba22eb6211c26abf9"
+                  },
+                  {
+                      "Path":  "Generated/Textures/M-Hum/M-Hum_00003_image.png",
+                      "Size":  1619,
+                      "Sha256":  "8d1f9ed8b8490bc14c444f1e1d3ad71345195cf24f7de37f37a2f0da03d4b176"
+                  },
+                  {
+                      "Path":  "Generated/Textures/M-Hum/M-Hum_00010_image.png",
+                      "Size":  1375,
+                      "Sha256":  "d985eb8a2004b1c41f44add6cfbaaab4610ad55240a87a1c78b229715bc7cb11"
+                  },
+                  {
+                      "Path":  "Generated/Textures/M-Hum/M-Hum_00011_image.png",
+                      "Size":  1421,
+                      "Sha256":  "74be8032c3a6877fd1c483f96eb2756600fcfded615f7b67683565f76d5d3a40"
+                  },
+                  {
+                      "Path":  "Generated/Textures/M-Hum/M-Hum_00012_image.png",
+                      "Size":  1403,
+                      "Sha256":  "51beb2c9dc79d14834eb606c9b0e16e4d07607a297aa28c901d0438f8f7da395"
+                  },
+                  {
+                      "Path":  "Generated/Textures/M-Hum/M-Hum_00013_image.png",
+                      "Size":  1416,
+                      "Sha256":  "56924d7a601afb1859c88a4c50801e957fdc03f30579cdfe1c4f556e7a080556"
+                  },
+                  {
+                      "Path":  "Generated/Textures/MIcon/MIcon.manifest.json",
+                      "Size":  693466,
+                      "Sha256":  "9c2acd139b50997d8792f69e216649dc6207f367645805e8eb6bedfe1ee97ff8"
+                  },
+                  {
+                      "Path":  "Generated/Textures/MIcon/MIcon_00000_image.png",
+                      "Size":  1594,
+                      "Sha256":  "825e6b8ecdfc93445dd3c5db9fce8b3babd4bb4efc4b130f0fbd7c7090311205"
+                  },
+                  {
+                      "Path":  "Generated/Textures/MIcon/MIcon_00002_image.png",
+                      "Size":  1677,
+                      "Sha256":  "5d6506c675bdeee2f89e2b006d3a203881125bf1b5b4042deb9af6d5981202b2"
+                  },
+                  {
+                      "Path":  "Generated/Textures/MIcon/MIcon_00004_image.png",
+                      "Size":  1765,
+                      "Sha256":  "cabca6f52049ac3f004ea2d528015af7e99dd21c11278d4db0ff240aa563da77"
+                  },
+                  {
+                      "Path":  "Generated/Textures/MIcon/MIcon_00006_image.png",
+                      "Size":  1762,
+                      "Sha256":  "b3950bc595fb066086192011ed54bee7eb3c8cb9a01c253aeb8072bb66b47d39"
+                  },
+                  {
+                      "Path":  "Generated/Textures/MIcon/MIcon_00008_image.png",
+                      "Size":  1711,
+                      "Sha256":  "10d0bc49a8ea26d3b2034711222ce4466d4143e7609ab89e678a4f029bfd72eb"
+                  },
+                  {
+                      "Path":  "Generated/Textures/MIcon/MIcon_00010_image.png",
+                      "Size":  1654,
+                      "Sha256":  "2536d6e5fcd1a7ef8255e94b6e111546f628158c43445c286beacfd04360a7c1"
+                  },
+                  {
+                      "Path":  "Generated/Textures/MIcon/MIcon_00012_image.png",
+                      "Size":  1753,
+                      "Sha256":  "2c09ccb20872fd0407a75065a663d475807338fc63a09f63275a8eb0a72428b7"
+                  },
+                  {
+                      "Path":  "Generated/Textures/MIcon/MIcon_00014_image.png",
+                      "Size":  1658,
+                      "Sha256":  "013ad93260856381a6eedfd3a78a367a21ae671d62ac8c3ac24c4f5cd4047a03"
+                  },
+                  {
+                      "Path":  "Generated/Textures/MIcon/MIcon_00016_image.png",
+                      "Size":  1724,
+                      "Sha256":  "8f7695bd3cf59f2307005034f66ce34634de19508880f1b7d80093eced2bd3eb"
+                  },
+                  {
+                      "Path":  "Generated/Textures/MIcon/MIcon_00018_image.png",
+                      "Size":  1755,
+                      "Sha256":  "d91f8864267c6b30183c6a3122f6ae93ddaf239668571f157d26a34cbe871229"
+                  },
+                  {
+                      "Path":  "Generated/Textures/MIcon/MIcon_00020_image.png",
+                      "Size":  1756,
+                      "Sha256":  "9f95cd043787b98235ba8463216cb309badae84e7d720cb537f72c448ecf73ef"
+                  },
+                  {
+                      "Path":  "Generated/Textures/MIcon/MIcon_00022_image.png",
+                      "Size":  1781,
+                      "Sha256":  "ceb4e123bb688a800e03a8f6d1bd0d661179b6216eedad68831b5470d4d45b6f"
+                  },
+                  {
+                      "Path":  "Generated/Textures/MIcon/MIcon_00024_image.png",
+                      "Size":  1592,
+                      "Sha256":  "1217775586e795e73b2a030039a75d5acded1f2e3eb3c130d2990a57e6ea64b3"
+                  },
+                  {
+                      "Path":  "Generated/Textures/MIcon/MIcon_00026_image.png",
+                      "Size":  1687,
+                      "Sha256":  "722265c58779e5f67a30e15ded5e1c18ebbc66f3a0384ea9fefe09d8d110bd86"
+                  },
+                  {
+                      "Path":  "Generated/Textures/MIcon/MIcon_00028_image.png",
+                      "Size":  1672,
+                      "Sha256":  "300f845b5fa84e2d8f88968f3cffb3deae9a7fe869d3a6e52c9a684bd83f7962"
+                  },
+                  {
+                      "Path":  "Generated/Textures/MIcon/MIcon_00030_image.png",
+                      "Size":  1633,
+                      "Sha256":  "e118d4e39b472ce94f720745d680820801d1edad9f431e87dbb81acfabb4db7c"
+                  },
+                  {
+                      "Path":  "Generated/Textures/Mon-1/Mon-1.manifest.json",
+                      "Size":  3944762,
+                      "Sha256":  "4fd15dc9aa2b4d674980b2170d2639fdf5c675e10f9f815bf020be61c0ce1ccc"
+                  },
+                  {
+                      "Path":  "Generated/Textures/Mon-1/Mon-1_00000_image.png",
+                      "Size":  10121,
+                      "Sha256":  "f9cc3eff87e5a98c52b76ea491559cb300ed8c983b3c1d2e2714ec66e431346e"
+                  },
+                  {
+                      "Path":  "Generated/Textures/Mon-1/Mon-1_00001_image.png",
+                      "Size":  10121,
+                      "Sha256":  "f9cc3eff87e5a98c52b76ea491559cb300ed8c983b3c1d2e2714ec66e431346e"
+                  },
+                  {
+                      "Path":  "Generated/Textures/Mon-1/Mon-1_00002_image.png",
+                      "Size":  10121,
+                      "Sha256":  "f9cc3eff87e5a98c52b76ea491559cb300ed8c983b3c1d2e2714ec66e431346e"
+                  },
+                  {
+                      "Path":  "Generated/Textures/Mon-1/Mon-1_00003_image.png",
+                      "Size":  10121,
+                      "Sha256":  "f9cc3eff87e5a98c52b76ea491559cb300ed8c983b3c1d2e2714ec66e431346e"
+                  },
+                  {
+                      "Path":  "Generated/Textures/Mon-1/Mon-1_01000_image.png",
+                      "Size":  1732,
+                      "Sha256":  "d22a2ffa1e0ef2c0371027dda877475978d1bbf70e40474d8c4de1cb370510a6"
+                  },
+                  {
+                      "Path":  "Generated/Textures/Mon-1/Mon-1_01001_image.png",
+                      "Size":  1671,
+                      "Sha256":  "cefddc84f3f8e8c203fe01c093bb8a97a097bffd97a8c55b45de70bef37c085a"
+                  },
+                  {
+                      "Path":  "Generated/Textures/Mon-1/Mon-1_01002_image.png",
+                      "Size":  1680,
+                      "Sha256":  "30122d24e67615bddeae13c071946678c6ae4ad8a2b071f02a9e7141e733c84d"
+                  },
+                  {
+                      "Path":  "Generated/Textures/Mon-1/Mon-1_01003_image.png",
+                      "Size":  1740,
+                      "Sha256":  "7bcbf6ff16e7f8fa3537b3fd64f1f8410e60e75c9635e6319d112f564f90b3ac"
+                  },
+                  {
+                      "Path":  "Generated/Textures/NPC/NPC.manifest.json",
+                      "Size":  9633261,
+                      "Sha256":  "fdae53e9c3a13b6474028f99842f5d97674ad704e96f63dc87e7cf00d2a85df6"
+                  },
+                  {
+                      "Path":  "Generated/Textures/NPC/NPC_00000_image.png",
+                      "Size":  2233,
+                      "Sha256":  "479cc9fe831f445ed78ab1dc63c97915d1d199c02fdf2f8878ab802c6e6c2cfc"
+                  },
+                  {
+                      "Path":  "Generated/Textures/NPC/NPC_00001_image.png",
+                      "Size":  2160,
+                      "Sha256":  "b214269e1d2f2437f00e13bff052f4618cd84b309865327957e090f969ecfae0"
+                  },
+                  {
+                      "Path":  "Generated/Textures/NPC/NPC_00002_image.png",
+                      "Size":  2141,
+                      "Sha256":  "8a076192409f84629c6b03d6486bb9a482e00d9477c71fb385649c5d8820106e"
+                  },
+                  {
+                      "Path":  "Generated/Textures/NPC/NPC_00003_image.png",
+                      "Size":  2148,
+                      "Sha256":  "23102218d61974bffa8fb93b76e45fe4a6fc7f5942ec85368853e25a5de866e3"
+                  },
+                  {
+                      "Path":  "Generated/Textures/NPC/NPC_00100_image.png",
+                      "Size":  1679,
+                      "Sha256":  "1517861eda2b62112e440f43c3097e6d1b55127672612e056d396848b0ffe0cc"
+                  },
+                  {
+                      "Path":  "Generated/Textures/NPC/NPC_00101_image.png",
+                      "Size":  1754,
+                      "Sha256":  "e0d75e5aeedecbb115a4795182f221f1f83c75a47288e8e9d422f4bf80f5eb91"
+                  },
+                  {
+                      "Path":  "Generated/Textures/NPC/NPC_00102_image.png",
+                      "Size":  1700,
+                      "Sha256":  "ef3dc8d34d3b56c4d576aef64408b54392bcc4b5117f5f0ac67dfeecc05348b9"
+                  },
+                  {
+                      "Path":  "Generated/Textures/NPC/NPC_00103_image.png",
+                      "Size":  1710,
+                      "Sha256":  "b9dfcba62416d9fd63791b0a171f5f6ff42f1b201ffe47c64745be851c4b4c9a"
+                  }
+              ]
+}

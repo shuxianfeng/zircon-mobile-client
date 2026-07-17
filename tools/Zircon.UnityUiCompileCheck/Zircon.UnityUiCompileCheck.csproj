@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <NoWarn>CS0649</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Zircon.ProtocolTests\Zircon.ProtocolTests.csproj" />
+    <Compile Include="..\..\Assets\Scripts\UI\Catalog\ZirconSystemCatalogBehaviour.cs" Link="UI\Catalog.cs" />
+    <Compile Include="..\..\Assets\Scripts\UI\Inventory\ZirconInventoryEquipmentPanelBehaviour.cs" Link="UI\Inventory.cs" />
+    <Compile Include="..\..\Assets\Scripts\UI\Buffs\ZirconBuffBarBehaviour.cs" Link="UI\Buffs.cs" />
+    <Compile Include="..\..\Assets\Scripts\UI\Chat\ZirconChatPanelBehaviour.cs" Link="UI\Chat.cs" />
+    <Compile Include="..\..\Assets\Scripts\UI\Skills\ZirconSkillBookPanelBehaviour.cs" Link="UI\Skills.cs" />
+    <Compile Include="..\..\Assets\Scripts\UI\Storage\ZirconStoragePanelBehaviour.cs" Link="UI\Storage.cs" />
+    <Compile Include="..\..\Assets\Scripts\UI\Npc\ZirconNpcServicePanelBehaviour.cs" Link="UI\NpcService.cs" />
+    <Compile Include="..\..\Assets\Scripts\UI\Quests\ZirconQuestPanelBehaviour.cs" Link="UI\Quests.cs" />
+    <Compile Include="..\..\Assets\Scripts\UI\Map\ZirconMiniMapPanelBehaviour.cs" Link="UI\MiniMap.cs" />
+    <Compile Include="..\..\Assets\Scripts\UI\Social\ZirconSocialTradePanelBehaviour.cs" Link="UI\SocialTrade.cs" />
+    <Compile Include="..\..\Assets\Scripts\UI\Mail\ZirconMailPanelBehaviour.cs" Link="UI\Mail.cs" />
+    <Compile Include="..\..\Assets\Scripts\UI\Market\ZirconMarketPanelBehaviour.cs" Link="UI\Market.cs" />
+    <Compile Include="..\..\Assets\Scripts\UI\Npc\ZirconNpcDialogPanelBehaviour.cs" Link="UI\Npc.cs" />
+  </ItemGroup>
+</Project>

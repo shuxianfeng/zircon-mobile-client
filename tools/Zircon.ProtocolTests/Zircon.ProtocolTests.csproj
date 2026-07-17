@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <NoWarn>CS8632</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\..\Assets\Scripts\Core\Protocol\*.cs" LinkBase="Core\Protocol" />
+    <Compile Include="..\..\Assets\Scripts\Game\Entities\ZirconEntityKind.cs" LinkBase="Game\Entities" />
+    <Compile Include="..\..\Assets\Scripts\Game\Entities\ZirconEntityState.cs" LinkBase="Game\Entities" />
+    <Compile Include="..\..\Assets\Scripts\Game\Skills\ZirconSkillState.cs" LinkBase="Game\Skills" />
+    <Compile Include="..\..\Assets\Scripts\Game\Quests\ZirconQuestState.cs" LinkBase="Game\Quests" />
+    <Compile Include="..\..\Assets\Scripts\Game\Social\ZirconSocialState.cs" LinkBase="Game\Social" />
+    <Compile Include="..\..\Assets\Scripts\Game\Commerce\ZirconCommerceState.cs" LinkBase="Game\Commerce" />
+    <Compile Include="..\..\Assets\Scripts\Game\Items\ZirconItemState.cs" LinkBase="Game\Items" />
+    <Compile Include="..\..\Assets\Scripts\Game\Buffs\ZirconBuffState.cs" LinkBase="Game\Buffs" />
+    <Compile Include="..\..\Assets\Scripts\Game\World\ZirconChatLogEntry.cs" LinkBase="Game\World" />
+    <Compile Include="..\..\Assets\Scripts\Game\World\ZirconWorldSnapshot.cs" LinkBase="Game\World" />
+    <Compile Include="..\..\Assets\Scripts\Game\World\ZirconWorldState.cs" LinkBase="Game\World" />
+  </ItemGroup>
+</Project>
