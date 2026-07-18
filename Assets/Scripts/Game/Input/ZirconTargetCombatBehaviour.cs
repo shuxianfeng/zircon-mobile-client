@@ -1,5 +1,6 @@
 using System.Threading.Tasks;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using Zircon.Mobile.Game.Entities;
 using Zircon.Mobile.Game.World;
 using Zircon.Mobile.UI.Login;
@@ -20,6 +21,7 @@ namespace Zircon.Mobile.Game.Input
 
         private int activeFingerId = -1;
         private Vector2 touchStart;
+        private bool touchStartedOverUi;
         private uint selectedObjectId;
         private bool hasSelectedObject;
         private uint lastTappedObjectId;
@@ -44,7 +46,7 @@ namespace Zircon.Mobile.Game.Input
             if (!enableMouseAndKeyboardInEditor || !Application.isEditor)
                 return;
 
-            if (UnityEngine.Input.GetMouseButtonUp(0))
+            if (UnityEngine.Input.GetMouseButtonUp(0) && (EventSystem.current == null || !EventSystem.current.IsPointerOverGameObject()))
                 HandleTap(UnityEngine.Input.mousePosition);
 
             if (UnityEngine.Input.GetKeyDown(KeyCode.Tab))
@@ -129,6 +131,7 @@ namespace Zircon.Mobile.Game.Input
                 {
                     activeFingerId = touch.fingerId;
                     touchStart = touch.position;
+                    touchStartedOverUi = EventSystem.current != null && EventSystem.current.IsPointerOverGameObject(touch.fingerId);
                 }
 
                 if (touch.fingerId != activeFingerId)
@@ -137,6 +140,7 @@ namespace Zircon.Mobile.Game.Input
                 if (touch.phase == TouchPhase.Canceled)
                 {
                     activeFingerId = -1;
+                    touchStartedOverUi = false;
                     return;
                 }
 
@@ -144,7 +148,9 @@ namespace Zircon.Mobile.Game.Input
                     continue;
 
                 activeFingerId = -1;
-                if (Vector2.Distance(touchStart, touch.position) <= maximumTapTravelPixels)
+                bool ignoreTap = touchStartedOverUi;
+                touchStartedOverUi = false;
+                if (!ignoreTap && Vector2.Distance(touchStart, touch.position) <= maximumTapTravelPixels)
                     HandleTap(touch.position);
                 return;
             }

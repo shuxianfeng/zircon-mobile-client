@@ -8,8 +8,12 @@ using UnityEngine;
 using Zircon.Mobile.UI.Buffs;
 using Zircon.Mobile.UI.Chat;
 using Zircon.Mobile.UI.Inventory;
+using Zircon.Mobile.UI.Mail;
+using Zircon.Mobile.UI.Market;
 using Zircon.Mobile.UI.Npc;
+using Zircon.Mobile.UI.Quests;
 using Zircon.Mobile.UI.Skills;
+using Zircon.Mobile.UI.Social;
 using Zircon.Mobile.UI.Storage;
 
 namespace Zircon.Mobile.Editor
@@ -28,7 +32,11 @@ namespace Zircon.Mobile.Editor
             Validate<ZirconSkillBookPanelBehaviour>("session", "catalog", "skillContent", "skillTemplate", "selectedNameText", "selectedDetailText");
             Validate<ZirconNpcServicePanelBehaviour>("session", "catalog", "inventoryContent", "slotTemplate", "amountInput", "sellButton", "repairButton");
             Validate<ZirconStoragePanelBehaviour>("session", "catalog", "inventoryContent", "storageContent", "slotTemplate", "sortButton");
-            Validate<ZirconChatPanelBehaviour>("session", "messageContent", "messageTemplate", "input", "sendButton");
+            Validate<ZirconQuestPanelBehaviour>("session", "catalog", "questContent", "questTemplate", "titleText", "progressText", "rewardChoiceInput", "trackButton", "completeButton");
+            Validate<ZirconSocialTradePanelBehaviour>("session", "allowGroupToggle", "playerNameInput", "groupInviteButton", "tradeRequestButton", "tradeGoldInput", "guildNameInput", "createGuildButton");
+            Validate<ZirconMailPanelBehaviour>("session", "mailContent", "mailTemplate", "senderText", "subjectText", "messageText", "collectButton", "deleteButton", "recipientInput", "sendButton");
+            Validate<ZirconMarketPanelBehaviour>("session", "catalog", "searchInput", "sortDropdown", "searchButton", "resultContent", "resultTemplate", "detailText", "buyButton", "consignButton");
+            Validate<ZirconChatPanelBehaviour>("session", "messageContent", "messageTemplate", "input", "whisperTarget", "whisperTargetRoot", "sendButton");
             Validate<ZirconBuffBarBehaviour>("session", "content", "buffTemplate", "detailText");
             Validate<ZirconNpcDialogPanelBehaviour>("session", "catalog", "panelRoot", "titleText", "bodyText", "buttonContent", "buttonTemplate", "goodsContent", "goodsButtonTemplate", "closeButton");
 
@@ -36,6 +44,11 @@ namespace Zircon.Mobile.Editor
             SerializedObject skillObject = new SerializedObject(skills);
             if (skillObject.FindProperty("hotbarAssignButtons").arraySize != 4 || skillObject.FindProperty("hotbarCasters").arraySize != 4)
                 throw new InvalidOperationException("The P0 skill hotbar is not bound to four positions.");
+
+            ZirconChatPanelBehaviour chat = Find<ZirconChatPanelBehaviour>();
+            SerializedObject chatObject = new SerializedObject(chat);
+            if (chatObject.FindProperty("channelButtons").arraySize != 6)
+                throw new InvalidOperationException("The chat panel is not bound to all six channel buttons.");
 
             TMP_FontAsset mobileFont = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>("Assets/Generated/UI/ZirconMobileFont.asset");
             if (mobileFont == null || mobileFont.atlasTexture == null || mobileFont.material == null)

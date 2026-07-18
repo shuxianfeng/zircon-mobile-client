@@ -3,6 +3,8 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 using Zircon.Mobile.Core.Protocol;
+using Zircon.Mobile.Game.Items;
+using Zircon.Mobile.Game.World;
 using Zircon.Mobile.UI.Catalog;
 using Zircon.Mobile.UI.Login;
 
@@ -61,6 +63,7 @@ namespace Zircon.Mobile.UI.Market
             if (detailText != null) detailText.text = selected.HasValue ? $"{selected.Value.Seller}\n{selected.Value.Message}\nPrice {selected.Value.Price}" : string.Empty;
             if (buyButton != null) buyButton.interactable = selected.HasValue && !selected.Value.IsOwner;
             if (cancelConsignButton != null) cancelConsignButton.interactable = selected.HasValue && selected.Value.IsOwner;
+            if (consignButton != null) consignButton.interactable = CanConsign(snapshot);
         }
 
         private void EnsureRows(int count)
@@ -75,11 +78,22 @@ namespace Zircon.Mobile.UI.Market
         private void Consign()
         {
             if (consignSlotInput == null || !int.TryParse(consignSlotInput.text, out int slot)) return;
+            if (!CanConsign(session?.GetWorldSnapshot())) return;
             long count = ParseLong(consignCountInput, 1); int price = (int)System.Math.Min(int.MaxValue, ParseLong(consignPriceInput, 1));
             Send(ZirconClientPackets.MarketConsign(new ZirconCellLinkInfo(ZirconGridType.Inventory, slot, count), price, consignMessageInput?.text, false), "market consign");
         }
 
         private void Send(byte[] packet, string label) => _ = session?.SendGamePacketCommandAsync(packet, label);
+        private bool CanConsign(ZirconWorldSnapshot snapshot)
+        {
+            if (snapshot == null || consignSlotInput == null || !int.TryParse(consignSlotInput.text, out int slot) ||
+                consignCountInput == null || !long.TryParse(consignCountInput.text, out long count) || count <= 0 ||
+                consignPriceInput == null || !long.TryParse(consignPriceInput.text, out long price) || price <= 0)
+                return false;
+            foreach (ZirconItemState item in snapshot.Inventory)
+                if (item.Slot == slot) return count <= item.Count;
+            return false;
+        }
         private static long ParseLong(TMP_InputField input, long fallback) => input != null && long.TryParse(input.text, out long value) ? System.Math.Max(1, value) : fallback;
         private static ZirconMarketListingInfo? FindListing(IReadOnlyList<ZirconMarketListingInfo> list, int index) { if (list != null) foreach (ZirconMarketListingInfo item in list) if (item.Index == index) return item; return null; }
         private sealed class ResultCell { public ResultCell(Button button, TMP_Text label) { Button = button; Label = label; } public int Index { get; set; } public Button Button { get; } public TMP_Text Label { get; } }

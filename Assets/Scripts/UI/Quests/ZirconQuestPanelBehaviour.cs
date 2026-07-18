@@ -23,8 +23,10 @@ namespace Zircon.Mobile.UI.Quests
         [SerializeField] private Button completeButton;
 
         private readonly List<QuestCell> cells = new List<QuestCell>();
+        private readonly Dictionary<int, bool> pendingTrackStates = new Dictionary<int, bool>();
         private int selectedIndex = -1;
         private float nextRefresh;
+        private float nextTrackCommandTime;
 
         private void Awake()
         {
@@ -49,17 +51,19 @@ namespace Zircon.Mobile.UI.Quests
                 cells[i].Button.gameObject.SetActive(active);
                 if (!active) continue;
                 ZirconQuestState quest = quests[i];
+                if (pendingTrackStates.TryGetValue(quest.Index, out bool pendingTrack) && pendingTrack == quest.Track)
+                    pendingTrackStates.Remove(quest.Index);
                 cells[i].QuestIndex = quest.Index;
                 if (cells[i].Label != null)
-                    cells[i].Label.text = (catalog?.GetQuest(quest.QuestIndex)?.Name ?? $"Quest #{quest.QuestIndex}") + (quest.Completed ? "\nCompleted" : quest.Track ? "\nTracked" : string.Empty);
+                    cells[i].Label.text = (catalog?.GetQuest(quest.QuestIndex)?.Name ?? $"Quest #{quest.QuestIndex}") + (quest.Completed ? "\nCompleted" : EffectiveTrack(quest) ? "\nTracked" : string.Empty);
             }
 
             ZirconQuestState selected = FindQuest(snapshot, selectedIndex);
             if (titleText != null) titleText.text = selected == null ? string.Empty : catalog?.GetQuest(selected.QuestIndex)?.Name ?? $"Quest #{selected.QuestIndex}";
             if (progressText != null) progressText.text = BuildProgress(selected);
-            if (trackButton != null) trackButton.interactable = selected != null && !selected.Completed;
+            if (trackButton != null) trackButton.interactable = selected != null && !selected.Completed && Time.unscaledTime >= nextTrackCommandTime;
             if (completeButton != null) completeButton.interactable = selected != null && !selected.Completed;
-            if (trackButtonText != null) trackButtonText.text = selected != null && selected.Track ? "Untrack" : "Track";
+            if (trackButtonText != null) trackButtonText.text = selected != null && EffectiveTrack(selected) ? "Untrack" : "Track";
         }
 
         private void EnsureRows(int count)
@@ -76,8 +80,19 @@ namespace Zircon.Mobile.UI.Quests
 
         private void ToggleTrack()
         {
+            if (Time.unscaledTime < nextTrackCommandTime) return;
             ZirconQuestState quest = FindQuest(session?.GetWorldSnapshot(), selectedIndex);
-            if (quest != null) _ = session.SendQuestTrackCommandAsync(quest.Index, !quest.Track);
+            if (quest == null) return;
+            bool value = !EffectiveTrack(quest);
+            pendingTrackStates[quest.Index] = value;
+            nextTrackCommandTime = Time.unscaledTime + .75f;
+            _ = session.SendQuestTrackCommandAsync(quest.Index, value);
+        }
+
+        private bool EffectiveTrack(ZirconQuestState quest)
+        {
+            if (quest == null) return false;
+            return pendingTrackStates.TryGetValue(quest.Index, out bool value) ? value : quest.Track;
         }
 
         private void CompleteSelected()

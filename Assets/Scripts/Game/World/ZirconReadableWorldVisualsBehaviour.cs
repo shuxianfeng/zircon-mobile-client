@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Reflection;
 using TMPro;
 using UnityEngine;
+using UnityEngine.UI;
+using Zircon.Mobile.Core.Network;
 using Zircon.Mobile.Game.Entities;
 using Zircon.Mobile.UI.Catalog;
 using Zircon.Mobile.UI.Login;
@@ -19,6 +21,12 @@ namespace Zircon.Mobile.Game.World
 
         private ZirconMapManifest cleanedManifest;
         private float nextStatusRefresh;
+
+        private void OnEnable()
+        {
+            RefreshStatus();
+            nextStatusRefresh = Time.unscaledTime + 0.35f;
+        }
 
         private void LateUpdate()
         {
@@ -112,6 +120,16 @@ namespace Zircon.Mobile.Game.World
         private void RefreshStatus()
         {
             if (statusText == null)
+                return;
+
+            ZirconConnectionState state = session?.ConnectionState ?? ZirconConnectionState.Disconnected;
+            bool worldUiActive = state == ZirconConnectionState.LoadingMap || state == ZirconConnectionState.InGame;
+            Graphic statusBackground = statusText.transform.parent?.GetComponent<Graphic>();
+            if (statusBackground != null && statusBackground.enabled != worldUiActive)
+                statusBackground.enabled = worldUiActive;
+            if (statusText.gameObject.activeSelf != worldUiActive)
+                statusText.gameObject.SetActive(worldUiActive);
+            if (!worldUiActive)
                 return;
 
             ZirconWorldSnapshot snapshot = session?.GetWorldSnapshot();

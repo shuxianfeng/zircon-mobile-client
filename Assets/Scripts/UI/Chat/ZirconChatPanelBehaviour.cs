@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
+using UnityEngine.Events;
 using UnityEngine.UI;
 using Zircon.Mobile.Game.World;
 using Zircon.Mobile.UI.Login;
@@ -9,28 +10,49 @@ namespace Zircon.Mobile.UI.Chat
 {
     public sealed class ZirconChatPanelBehaviour : MonoBehaviour
     {
+        private static readonly string[] ChannelNames = { "LOCAL", "GROUP", "GUILD", "SHOUT", "GLOBAL", "WHISPER" };
+
         [SerializeField] private ZirconProtocolProbeBehaviour session;
         [SerializeField] private RectTransform messageContent;
         [SerializeField] private Button messageTemplate;
         [SerializeField] private TMP_InputField input;
         [SerializeField] private TMP_InputField whisperTarget;
+        [SerializeField] private GameObject whisperTargetRoot;
         [SerializeField] private TMP_Dropdown channelDropdown;
+        [SerializeField] private Button[] channelButtons;
         [SerializeField] private Button sendButton;
         [SerializeField] private int visibleMessageCount = 40;
 
         private readonly List<Button> rows = new List<Button>();
+        private UnityAction[] channelActions;
+        private int selectedChannel;
         private float nextRefresh;
 
         private void Awake()
         {
             if (sendButton != null)
                 sendButton.onClick.AddListener(SendCurrent);
+
+            if (channelButtons != null)
+            {
+                channelActions = new UnityAction[channelButtons.Length];
+                for (int index = 0; index < channelButtons.Length; index++)
+                {
+                    int captured = index;
+                    channelActions[index] = () => SelectChannel(captured);
+                    channelButtons[index]?.onClick.AddListener(channelActions[index]);
+                }
+            }
+
+            SelectChannel(channelDropdown?.value ?? 0);
         }
 
         private void OnDestroy()
         {
             if (sendButton != null)
                 sendButton.onClick.RemoveListener(SendCurrent);
+            for (int index = 0; channelButtons != null && channelActions != null && index < channelButtons.Length && index < channelActions.Length; index++)
+                channelButtons[index]?.onClick.RemoveListener(channelActions[index]);
         }
 
         private void Update()
@@ -79,12 +101,28 @@ namespace Zircon.Mobile.UI.Chat
             if (string.IsNullOrEmpty(text))
                 return;
 
-            string payload = BuildPayload(channelDropdown?.value ?? 0, whisperTarget?.text, text);
+            string payload = BuildPayload(channelDropdown?.value ?? selectedChannel, whisperTarget?.text, text);
             if (string.IsNullOrEmpty(payload))
                 return;
 
             _ = session?.SendChatCommandAsync(payload);
             input.text = string.Empty;
+        }
+
+        private void SelectChannel(int channel)
+        {
+            selectedChannel = channel < 0 ? 0 : channel > 5 ? 5 : channel;
+            for (int index = 0; channelButtons != null && index < channelButtons.Length; index++)
+            {
+                Button button = channelButtons[index];
+                if (button == null) continue;
+                button.interactable = true;
+                TMP_Text label = button.GetComponentInChildren<TMP_Text>();
+                if (label != null && index < ChannelNames.Length)
+                    label.text = (index == selectedChannel ? "*" : string.Empty) + ChannelNames[index];
+            }
+            if (whisperTargetRoot != null)
+                whisperTargetRoot.SetActive(selectedChannel == 5);
         }
 
         internal static string BuildPayload(int channel, string target, string text)

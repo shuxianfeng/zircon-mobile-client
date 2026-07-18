@@ -63,6 +63,7 @@ namespace Zircon.Mobile.UI.Mail
             if (attachmentText != null) attachmentText.text = selected.HasValue ? $"Gold {selected.Value.Gold}  Items {selected.Value.Items.Count}" : string.Empty;
             if (collectButton != null) collectButton.interactable = selected.HasValue && (selected.Value.HasItem || selected.Value.Gold > 0);
             if (deleteButton != null) deleteButton.interactable = selected.HasValue;
+            if (sendButton != null) sendButton.interactable = !string.IsNullOrWhiteSpace(recipientInput?.text) && !string.IsNullOrWhiteSpace(composeSubjectInput?.text);
         }
 
         private void EnsureRows(int count)
@@ -93,6 +94,7 @@ namespace Zircon.Mobile.UI.Mail
 
         private void SendMail()
         {
+            if (string.IsNullOrWhiteSpace(recipientInput?.text) || string.IsNullOrWhiteSpace(composeSubjectInput?.text)) return;
             long gold = goldInput != null && long.TryParse(goldInput.text, out long parsedGold) ? System.Math.Max(0, parsedGold) : 0;
             var links = new List<ZirconCellLinkInfo>();
             if (attachmentSlotInput != null && int.TryParse(attachmentSlotInput.text, out int slot))

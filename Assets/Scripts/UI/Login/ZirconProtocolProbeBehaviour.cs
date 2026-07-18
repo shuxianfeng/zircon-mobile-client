@@ -19,9 +19,9 @@ namespace Zircon.Mobile.UI.Login
         [SerializeField] private bool showDebugOverlay;
 
         [Header("Server")]
-        [SerializeField] private string host = "zircon.35861344.xyz";
+        [SerializeField] private string host = "192.168.0.100";
         [SerializeField] private int port = 17000;
-        [SerializeField] private bool preferIpv6 = true;
+        [SerializeField] private bool preferIpv6;
 
         [Header("Login")]
         [SerializeField] private string email;
@@ -640,7 +640,6 @@ namespace Zircon.Mobile.UI.Login
         }
     }
 }
-
 
 
 

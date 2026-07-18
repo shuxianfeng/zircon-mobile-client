@@ -70,6 +70,7 @@ namespace Zircon.Mobile.UI.Social
         private void Refresh(ZirconWorldSnapshot snapshot)
         {
             if (snapshot?.Social == null) return;
+            string playerName = NameValue();
             if (allowGroupToggle != null) allowGroupToggle.SetIsOnWithoutNotify(snapshot.Social.AllowGroup);
             if (groupMembersText != null)
             {
@@ -81,6 +82,18 @@ namespace Zircon.Mobile.UI.Social
                 invitationText.text = !string.IsNullOrEmpty(snapshot.Social.PendingGuildInvite) ? $"{snapshot.Social.PendingGuildName}: {snapshot.Social.PendingGuildInvite}" : snapshot.Social.PendingGroupInvite;
             if (tradeStatusText != null)
                 tradeStatusText.text = snapshot.Social.TradeOpen ? $"{snapshot.Social.TradePartner}\nGold {snapshot.Social.OfferedGold} / {snapshot.Social.PartnerGold}\nItems {snapshot.Social.PartnerItems.Count}" : string.Empty;
+            SetInteractable(groupInviteButton, playerName.Length > 0);
+            bool hasGroupInvite = !string.IsNullOrEmpty(snapshot.Social.PendingGroupInvite);
+            SetInteractable(acceptGroupButton, hasGroupInvite); SetInteractable(declineGroupButton, hasGroupInvite);
+            bool hasTradeRequest = !snapshot.Social.TradeOpen && !string.IsNullOrEmpty(snapshot.Social.TradePartner);
+            SetInteractable(acceptTradeButton, hasTradeRequest); SetInteractable(declineTradeButton, hasTradeRequest);
+            SetInteractable(addTradeGoldButton, snapshot.Social.TradeOpen); SetInteractable(addTradeItemButton, snapshot.Social.TradeOpen);
+            SetInteractable(confirmTradeButton, snapshot.Social.TradeOpen); SetInteractable(closeTradeButton, snapshot.Social.TradeOpen);
+            SetInteractable(createGuildButton, !string.IsNullOrWhiteSpace(guildNameInput?.text));
+            SetInteractable(inviteGuildMemberButton, playerName.Length > 0);
+            SetInteractable(updateGuildNoticeButton, !string.IsNullOrWhiteSpace(guildNoticeInput?.text));
+            bool hasGuildInvite = !string.IsNullOrEmpty(snapshot.Social.PendingGuildInvite);
+            SetInteractable(acceptGuildButton, hasGuildInvite); SetInteractable(declineGuildButton, hasGuildInvite);
         }
 
         private void SetAllowGroup(bool allow) => Send(ZirconClientPackets.GroupSwitch(allow), "group switch");
@@ -103,6 +116,7 @@ namespace Zircon.Mobile.UI.Social
         }
 
         private void Send(byte[] packet, string label) => _ = session?.SendGamePacketCommandAsync(packet, label);
+        private static void SetInteractable(Selectable target, bool value) { if (target != null) target.interactable = value; }
 
         private static ZirconItemState FindInventoryItem(ZirconWorldSnapshot snapshot, int slot)
         {

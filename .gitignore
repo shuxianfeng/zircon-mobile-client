@@ -25,9 +25,9 @@ MemoryCaptures/
 *.apk
 *.aab
 *.unitypackage
+*.log
 
 .tools/
 **/[Bb]in/
 **/[Oo]bj/
 !tools/**/*.csproj
-
