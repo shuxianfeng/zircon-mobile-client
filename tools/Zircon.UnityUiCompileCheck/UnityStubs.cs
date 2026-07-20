@@ -11,7 +11,8 @@ namespace UnityEngine
         protected static T Instantiate<T>(T original, object parent) where T : class, new() => new T();
         protected static void Destroy(object target) { }
     }
-    public class MonoBehaviour : Object { }
+    public class MonoBehaviour : Object { protected T GetComponent<T>() where T : class => null; }
+    public static class Debug { public static void Log(object message) { } }
     public class RectTransform { public GameObject gameObject { get; } = new GameObject(); public Vector2 anchoredPosition { get; set; } }
     public readonly struct Vector2 { public Vector2(float x, float y) { } public static Vector2 zero => new Vector2(0, 0); }
     public class GameObject
@@ -72,6 +73,7 @@ namespace Zircon.Mobile.UI.Login
 {
     public sealed class ZirconProtocolProbeBehaviour
     {
+        public void ConfigureItemStackSizeResolver(Func<int, int> resolver) { }
         public ZirconWorldSnapshot GetWorldSnapshot() => null;
         public Task SendGamePacketCommandAsync(byte[] packet, string label) => Task.CompletedTask;
         public Task SendQuestAcceptCommandAsync(int index) => Task.CompletedTask;

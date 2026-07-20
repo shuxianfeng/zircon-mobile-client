@@ -1,6 +1,7 @@
 using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using Zircon.Mobile.Core.Protocol;
 using Zircon.Mobile.Game.Entities;
 using Zircon.Mobile.Game.World;
 using Zircon.Mobile.UI.Login;
@@ -18,6 +19,7 @@ namespace Zircon.Mobile.Game.Input
         [SerializeField] private float doubleTapSeconds = 0.35f;
         [SerializeField] private float attackRepeatSeconds = 0.45f;
         [SerializeField] private float npcRepeatSeconds = 1f;
+        [SerializeField] private float autoApproachRepeatSeconds = 0.34f;
 
         private int activeFingerId = -1;
         private Vector2 touchStart;
@@ -28,6 +30,9 @@ namespace Zircon.Mobile.Game.Input
         private float lastTapTime = float.NegativeInfinity;
         private float nextAttackTime;
         private float nextNpcTime;
+        private uint autoApproachObjectId;
+        private float nextAutoApproachTime;
+        private bool autoApproachSending;
 
         public bool HasSelectedObject => hasSelectedObject;
         public uint SelectedObjectId => selectedObjectId;
@@ -42,6 +47,8 @@ namespace Zircon.Mobile.Game.Input
 
             ValidateSelection();
             HandleTouch();
+            if (autoApproachObjectId != 0 && Time.unscaledTime >= nextAutoApproachTime && !autoApproachSending)
+                _ = AdvanceAutoApproachAsync();
 
             if (!enableMouseAndKeyboardInEditor || !Application.isEditor)
                 return;
@@ -105,8 +112,52 @@ namespace Zircon.Mobile.Game.Input
             }
 
             byte direction = DirectionFromPoints(snapshot.Location, target.Location);
+            if (ChebyshevDistance(snapshot.Location, target.Location) > 1)
+            {
+                autoApproachObjectId = target.ObjectId;
+                nextAutoApproachTime = Time.unscaledTime;
+                await AdvanceAutoApproachAsync();
+                return;
+            }
+
+            autoApproachObjectId = 0;
             nextAttackTime = Time.unscaledTime + attackRepeatSeconds;
             await protocolProbe.SendAttackCommandAsync(direction);
+        }
+
+        private async Task AdvanceAutoApproachAsync()
+        {
+            if (autoApproachSending || protocolProbe == null || !protocolProbe.IsInGame)
+                return;
+            ZirconWorldSnapshot snapshot = protocolProbe.GetWorldSnapshot();
+            if (!TryFindAttackable(snapshot, autoApproachObjectId, out ZirconEntityState target))
+            {
+                autoApproachObjectId = 0;
+                return;
+            }
+
+            autoApproachSending = true;
+            try
+            {
+                byte direction = DirectionFromPoints(snapshot.Location, target.Location);
+                if (ChebyshevDistance(snapshot.Location, target.Location) <= 1)
+                {
+                    autoApproachObjectId = 0;
+                    nextAttackTime = Time.unscaledTime + attackRepeatSeconds;
+                    await protocolProbe.SendAttackCommandAsync(direction);
+                    Debug.Log("Combat auto-approach reached target=" + target.ObjectId + " and attacked");
+                }
+                else
+                {
+                    nextAutoApproachTime = Time.unscaledTime + autoApproachRepeatSeconds;
+                    await protocolProbe.SendMoveCommandAsync(direction, 1);
+                    Debug.Log("Combat auto-approach target=" + target.ObjectId + " direction=" + direction);
+                }
+            }
+            finally
+            {
+                autoApproachSending = false;
+            }
         }
 
         public async Task PickUpNearbyAsync()
@@ -119,6 +170,7 @@ namespace Zircon.Mobile.Game.Input
         public void ClearSelection()
         {
             hasSelectedObject = false;
+            autoApproachObjectId = 0;
             worldRenderer?.ClearSelectedObject();
         }
 
@@ -249,6 +301,8 @@ namespace Zircon.Mobile.Game.Input
 
         private void SetSelection(uint objectId)
         {
+            if (selectedObjectId != objectId)
+                autoApproachObjectId = 0;
             selectedObjectId = objectId;
             hasSelectedObject = true;
             worldRenderer?.SetSelectedObject(objectId);
@@ -271,6 +325,20 @@ namespace Zircon.Mobile.Game.Input
                 return false;
 
             return snapshot.LocalPlayer == null || entity.ObjectId != snapshot.LocalPlayer.ObjectId;
+        }
+
+        private static bool TryFindAttackable(ZirconWorldSnapshot snapshot, uint objectId, out ZirconEntityState target)
+        {
+            target = null;
+            if (snapshot == null || objectId == 0) return false;
+            foreach (ZirconEntityState entity in snapshot.Entities)
+                if (entity.ObjectId == objectId && IsAttackable(entity, snapshot)) { target = entity; return true; }
+            return false;
+        }
+
+        private static int ChebyshevDistance(ZirconMapPoint origin, ZirconMapPoint target)
+        {
+            return Mathf.Max(Mathf.Abs(target.X - origin.X), Mathf.Abs(target.Y - origin.Y));
         }
 
         private static byte DirectionFromPoints(Zircon.Mobile.Core.Protocol.ZirconMapPoint origin, Zircon.Mobile.Core.Protocol.ZirconMapPoint target)

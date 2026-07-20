@@ -49,8 +49,14 @@ namespace Zircon.Mobile.UI.Login
 
         public event Action<IReadOnlyList<ZirconCharacterSelectInfo>> CharactersChanged;
         public event Action<ZirconConnectionState> ConnectionStateChanged;
+        public event Action<string> LoginStatusChanged;
         public IReadOnlyList<ZirconCharacterSelectInfo> Characters => characters;
         public ZirconConnectionState ConnectionState => client?.State ?? ZirconConnectionState.Disconnected;
+
+        public void ConfigureItemStackSizeResolver(Func<int, int> resolver)
+        {
+            worldState.SetItemStackSizeResolver(resolver);
+        }
 
         private async void Start()
         {
@@ -201,7 +207,9 @@ namespace Zircon.Mobile.UI.Login
                 IReadOnlyList<ZirconCharacterSelectInfo> loginCharacters = login.Characters;
                 characters = loginCharacters;
                 pendingMainThreadActions.Enqueue(() => CharactersChanged?.Invoke(loginCharacters));
-                AppendLog($"login result={login.Result} characters={login.Characters.Count}");
+                string loginStatus = DescribeLoginResult(login);
+                pendingMainThreadActions.Enqueue(() => LoginStatusChanged?.Invoke(loginStatus));
+                AppendLog($"login result={login.Result} message={login.Message} duration={login.Duration} characters={login.Characters.Count}");
                 foreach (ZirconCharacterSelectInfo character in login.Characters)
                     AppendLog($"character index={character.Index} name={character.Name} level={character.Level}");
 
@@ -233,6 +241,25 @@ namespace Zircon.Mobile.UI.Login
         }
 
         public bool IsInGame => client != null && cts != null && client.State == ZirconConnectionState.InGame;
+
+        private static string DescribeLoginResult(ZirconDecodedLogin login)
+        {
+            switch (login.Result)
+            {
+                case ZirconLoginResult.Success: return "登录成功";
+                case ZirconLoginResult.Disabled: return "服务器当前禁止登录，请检查服务端登录开关";
+                case ZirconLoginResult.BadEMail: return "账号格式不正确";
+                case ZirconLoginResult.BadPassword: return "密码格式不正确";
+                case ZirconLoginResult.AccountNotExists: return "账号不存在";
+                case ZirconLoginResult.AccountNotActivated: return "账号尚未激活";
+                case ZirconLoginResult.WrongPassword: return "密码错误";
+                case ZirconLoginResult.Banned: return "账号已被禁用：" + login.Message;
+                case ZirconLoginResult.AlreadyLoggedIn: return "账号正在使用中，请稍后再试";
+                case ZirconLoginResult.AlreadyLoggedInPassword: return "账号正在使用中，服务器已发送新密码";
+                case ZirconLoginResult.AlreadyLoggedInAdmin: return "账号正在被管理员接管";
+                default: return "登录失败：" + login.Result;
+            }
+        }
 
         public ZirconWorldSnapshot GetWorldSnapshot()
         {
@@ -640,10 +667,5 @@ namespace Zircon.Mobile.UI.Login
         }
     }
 }
-
-
-
-
-
 
 

@@ -21,9 +21,14 @@ namespace Zircon.Mobile.Game.World
 
         private ZirconMapManifest cleanedManifest;
         private float nextStatusRefresh;
+        private ZirconProductionEntityPresentationBehaviour productionPresentation;
 
         private void OnEnable()
         {
+            productionPresentation = GetComponent<ZirconProductionEntityPresentationBehaviour>();
+            if (productionPresentation == null)
+                productionPresentation = gameObject.AddComponent<ZirconProductionEntityPresentationBehaviour>();
+            productionPresentation.Configure(session, worldRenderer);
             RefreshStatus();
             nextStatusRefresh = Time.unscaledTime + 0.35f;
         }
@@ -84,7 +89,10 @@ namespace Zircon.Mobile.Game.World
             if (dictionaryField?.GetValue(worldRenderer) is IDictionary dictionary)
             {
                 foreach (DictionaryEntry entry in dictionary)
-                    if (entry.Value is IList frames)
+                    if (entry.Key is ZirconEntityKind kind &&
+                        kind != ZirconEntityKind.Monster &&
+                        kind != ZirconEntityKind.Spell &&
+                        entry.Value is IList frames)
                         while (frames.Count > 1)
                             frames.RemoveAt(frames.Count - 1);
             }
@@ -100,6 +108,10 @@ namespace Zircon.Mobile.Game.World
             for (int i = 0; i < worldRenderer.transform.childCount; i++)
             {
                 Transform child = worldRenderer.transform.GetChild(i);
+                SpriteRenderer spriteRenderer = child.GetComponent<SpriteRenderer>();
+                Material runtimeMaterial = ZirconRuntimeSpriteMaterial.Shared;
+                if (spriteRenderer != null && runtimeMaterial != null && spriteRenderer.sharedMaterial != runtimeMaterial)
+                    spriteRenderer.sharedMaterial = runtimeMaterial;
                 uint objectId = ParseObjectId(child.name);
                 if (!kinds.TryGetValue(objectId, out ZirconEntityKind kind))
                     continue;

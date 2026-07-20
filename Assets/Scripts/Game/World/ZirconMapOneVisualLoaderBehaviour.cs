@@ -29,6 +29,13 @@ namespace Zircon.Mobile.Game.World
         private IEnumerator LoadMap()
         {
             loading = true;
+            if (mapRenderer == null)
+            {
+                Debug.LogError("Map 1 floor loader cannot start because ZirconMapDebugRenderer is missing.");
+                loaded = true;
+                loading = false;
+                yield break;
+            }
             string json = null;
             string error = null;
             yield return ZirconAssetStore.LoadText("Generated/Data/Maps/0.map.manifest.json",

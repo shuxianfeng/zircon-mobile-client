@@ -26,9 +26,11 @@ namespace Zircon.Mobile.Game.Skills
 
         private float cooldownEndsAt;
         private bool sending;
+        private bool configured;
 
         public int MagicType => magicType;
-        public bool IsReady => !sending && Time.unscaledTime >= cooldownEndsAt;
+        public bool IsConfigured => configured;
+        public bool IsReady => configured && !sending && Time.unscaledTime >= cooldownEndsAt;
 
         private void Awake()
         {
@@ -67,11 +69,21 @@ namespace Zircon.Mobile.Game.Skills
             magicType = type;
             magicMode = Mathf.Clamp(mode, 0, 4);
             cooldownMilliseconds = Mathf.Max(0, delayMilliseconds);
+            configured = type > 0;
+        }
+
+        public void ClearConfiguration()
+        {
+            configured = false;
+            magicType = 0;
+            magicMode = 0;
+            cooldownMilliseconds = 0;
+            cooldownEndsAt = 0f;
         }
 
         public async Task CastAsync()
         {
-            if (!IsReady || protocolProbe == null || !protocolProbe.IsInGame)
+            if (!configured || !IsReady || protocolProbe == null || !protocolProbe.IsInGame)
                 return;
 
             ZirconWorldSnapshot snapshot = protocolProbe.GetWorldSnapshot();

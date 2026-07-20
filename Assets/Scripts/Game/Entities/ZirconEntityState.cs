@@ -16,6 +16,7 @@ namespace Zircon.Mobile.Game.Entities
         public ZirconMirAction Action { get; set; }
         public int ActionMagic { get; set; }
         public uint ActionTargetId { get; set; }
+        public long ActionSequence { get; set; }
         public int Level { get; set; }
         public int Health { get; set; }
         public int MaxHealth { get; set; }
@@ -40,6 +41,7 @@ namespace Zircon.Mobile.Game.Entities
                 Action = Action,
                 ActionMagic = ActionMagic,
                 ActionTargetId = ActionTargetId,
+                ActionSequence = ActionSequence,
                 Level = Level,
                 Health = Health,
                 MaxHealth = MaxHealth,

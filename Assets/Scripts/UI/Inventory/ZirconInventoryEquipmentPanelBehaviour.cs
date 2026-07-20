@@ -39,6 +39,7 @@ namespace Zircon.Mobile.UI.Inventory
                 useButton.onClick.AddListener(UseSelected);
             if (lockButton != null)
                 lockButton.onClick.AddListener(ToggleSelectedLock);
+
         }
 
         private void OnDestroy()

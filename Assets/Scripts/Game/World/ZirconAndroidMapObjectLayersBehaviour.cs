@@ -104,6 +104,7 @@ namespace Zircon.Mobile.Game.World
             item.transform.localPosition = new Vector3(cell.X * tileScale, -(cell.Y + 1) * tileScale, 0f);
             item.transform.localScale = new Vector3(1f, 1.5f, 1f);
             SpriteRenderer renderer = item.AddComponent<SpriteRenderer>();
+            renderer.sharedMaterial = ZirconRuntimeSpriteMaterial.Shared;
             renderer.sprite = sprite;
             renderer.color = Color.white;
             renderer.sortingOrder = -cell.Y + (front ? 1 : -1);

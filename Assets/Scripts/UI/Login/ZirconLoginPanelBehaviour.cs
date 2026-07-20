@@ -20,7 +20,11 @@ namespace Zircon.Mobile.UI.Login
         {
             loginButton?.onClick.AddListener(OnLoginPressed);
             if (session != null)
+            {
                 session.ConnectionStateChanged += OnConnectionStateChanged;
+                session.LoginStatusChanged += OnLoginStatusChanged;
+            }
+            Debug.Log("Login panel ready: session=" + (session != null) + " button=" + (loginButton != null));
             Refresh();
         }
 
@@ -28,11 +32,15 @@ namespace Zircon.Mobile.UI.Login
         {
             loginButton?.onClick.RemoveListener(OnLoginPressed);
             if (session != null)
+            {
                 session.ConnectionStateChanged -= OnConnectionStateChanged;
+                session.LoginStatusChanged -= OnLoginStatusChanged;
+            }
         }
 
         private void OnLoginPressed()
         {
+            Debug.Log("Login button pressed: session=" + (session != null) + " submitting=" + submitting);
             _ = SubmitAsync();
         }
 
@@ -66,6 +74,11 @@ namespace Zircon.Mobile.UI.Login
         {
             SetStatus(StateText(state));
             Refresh();
+        }
+
+        private void OnLoginStatusChanged(string value)
+        {
+            SetStatus(value);
         }
 
         private void Refresh()

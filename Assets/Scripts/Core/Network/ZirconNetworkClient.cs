@@ -224,7 +224,11 @@ namespace Zircon.Mobile.Core.Network
             }
             else if (frame.PacketId == ZirconPacketIds.Server.Login || frame.PacketId == ZirconPacketIds.Server.LoginSimple)
             {
-                SetState(ZirconConnectionState.SelectingCharacter);
+                if (ZirconServerPacketDecoder.TryDecodeLogin(frame, out ZirconDecodedLogin login) &&
+                    login.Result == ZirconLoginResult.Success)
+                    SetState(ZirconConnectionState.SelectingCharacter);
+                else
+                    SetState(ZirconConnectionState.ReadyForLogin);
             }
             else if (frame.PacketId == ZirconPacketIds.Server.StartGame)
             {
@@ -274,7 +278,6 @@ namespace Zircon.Mobile.Core.Network
         }
     }
 }
-
 
 
 

@@ -149,6 +149,12 @@ namespace Zircon.Mobile.Game.World
             if (!spritesByKind.TryGetValue(kind, out List<Sprite> sprites) || sprites.Count == 0)
                 return markerSprite;
 
+            // The tracked production sample currently contains only monster
+            // models 0 and 1. Keep a diagnostic marker for any other model so
+            // an unrelated creature is never presented as the final artwork.
+            if (kind == ZirconEntityKind.Monster && (entity.ModelIndex < 0 || entity.ModelIndex >= 2))
+                return markerSprite;
+
             int frame = Mathf.FloorToInt(Time.time * spriteAnimationFps);
             int objectOffset = (int)(entity.ObjectId % 2147483647u);
             int index = Mathf.Abs(frame + objectOffset) % sprites.Count;
@@ -236,4 +242,3 @@ namespace Zircon.Mobile.Game.World
         }
     }
 }
-

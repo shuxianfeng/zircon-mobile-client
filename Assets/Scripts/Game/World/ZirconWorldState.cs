@@ -20,6 +20,7 @@ namespace Zircon.Mobile.Game.World
         private readonly Dictionary<int, int> stats = new Dictionary<int, int>();
         private readonly Dictionary<int, ZirconSkillState> skills = new Dictionary<int, ZirconSkillState>();
         private readonly Dictionary<int, ZirconItemState> items = new Dictionary<int, ZirconItemState>();
+        private Func<int, int> itemStackSizeResolver = _ => 1;
         private readonly Dictionary<int, ZirconBuffState> buffs = new Dictionary<int, ZirconBuffState>();
         private readonly Dictionary<int, ZirconQuestState> quests = new Dictionary<int, ZirconQuestState>();
         private readonly ZirconSocialState social = new ZirconSocialState();
@@ -298,6 +299,12 @@ namespace Zircon.Mobile.Game.World
             }
         }
 
+        public void SetItemStackSizeResolver(Func<int, int> resolver)
+        {
+            lock (syncRoot)
+                itemStackSizeResolver = resolver ?? (_ => 1);
+        }
+
         private bool ApplyLogin(ZirconDecodedLogin login, out string summary)
         {
             lock (syncRoot)
@@ -496,6 +503,7 @@ namespace Zircon.Mobile.Game.World
                 entity.Action = ZirconMirAction.Attack;
                 entity.ActionMagic = attack.AttackMagic;
                 entity.ActionTargetId = attack.TargetId;
+                entity.ActionSequence++;
                 entity.LastUpdatedUtc = DateTime.UtcNow;
                 UpdateLocalIfMatching(entity);
             }
@@ -513,6 +521,7 @@ namespace Zircon.Mobile.Game.World
                 entity.Action = ZirconMirAction.Spell;
                 entity.ActionMagic = magic.MagicType;
                 entity.ActionTargetId = magic.Targets.Count > 0 ? magic.Targets[0] : 0;
+                entity.ActionSequence++;
                 entity.LastUpdatedUtc = DateTime.UtcNow;
                 UpdateLocalIfMatching(entity);
             }
@@ -751,17 +760,68 @@ namespace Zircon.Mobile.Game.World
         }
         private bool ApplyItemsGained(ZirconItemsGainedInfo gained, out string summary)
         {
+            int merged = 0;
+            int added = 0;
             lock (syncRoot)
             {
                 foreach (ZirconUserItemInfo packetItem in gained.Items)
                 {
-                    ZirconItemState item = ZirconItemState.FromPacket(packetItem);
-                    items[ItemKey(item.Grid, item.Slot)] = item;
+                    long remaining = packetItem.Count;
+                    int stackSize = Math.Max(1, itemStackSizeResolver(packetItem.InfoIndex));
+
+                    // ItemsGained carries the amount acquired, not a final bag-cell snapshot.
+                    // Match the desktop client's AddItems behaviour: fill compatible stacks,
+                    // then place any remainder into the first free inventory cells. Its Slot
+                    // field is deliberately ignored because it is not the destination slot.
+                    if (stackSize > 1)
+                    {
+                        var candidates = new List<ZirconItemState>();
+                        foreach (ZirconItemState existing in items.Values)
+                        {
+                            if (existing.Grid == ZirconGridType.Inventory &&
+                                existing.InfoIndex == packetItem.InfoIndex &&
+                                existing.Flags == packetItem.Flags &&
+                                existing.Level == packetItem.Level &&
+                                existing.Count < stackSize)
+                                candidates.Add(existing);
+                        }
+                        candidates.Sort((left, right) => left.Slot.CompareTo(right.Slot));
+                        foreach (ZirconItemState existing in candidates)
+                        {
+                            long transfer = Math.Min(remaining, stackSize - existing.Count);
+                            if (transfer <= 0) continue;
+                            existing.Count += transfer;
+                            remaining -= transfer;
+                            merged++;
+                            if (remaining == 0) break;
+                        }
+                    }
+
+                    while (remaining > 0)
+                    {
+                        int slot = FindFirstEmptyInventorySlot();
+                        if (slot < 0) break;
+                        ZirconItemState item = ZirconItemState.FromPacket(packetItem);
+                        item.Grid = ZirconGridType.Inventory;
+                        item.Slot = slot;
+                        item.Count = Math.Min(remaining, stackSize);
+                        items[ItemKey(item.Grid, item.Slot)] = item;
+                        remaining -= item.Count;
+                        added++;
+                    }
                 }
             }
 
-            summary = $"world items gained count={gained.Items.Count}";
+            summary = $"world items gained packets={gained.Items.Count} merged={merged} added={added}";
             return true;
+        }
+
+        private int FindFirstEmptyInventorySlot()
+        {
+            for (int slot = 0; slot < 49; slot++)
+                if (!items.ContainsKey(ItemKey(ZirconGridType.Inventory, slot)))
+                    return slot;
+            return -1;
         }
 
         private bool ApplyItemMove(ZirconItemMoveInfo move, out string summary)
@@ -1102,5 +1162,3 @@ namespace Zircon.Mobile.Game.World
         }
     }
 }
-
-

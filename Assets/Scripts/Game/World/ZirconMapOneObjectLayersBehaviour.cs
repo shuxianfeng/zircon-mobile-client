@@ -88,7 +88,9 @@ namespace Zircon.Mobile.Game.World
             go.transform.localPosition = new Vector3(cell.X * tileScale, -(cell.Y + 1) * tileScale, 0f);
             go.transform.localScale = new Vector3(1f, 1.5f, 1f);
             SpriteRenderer renderer = go.AddComponent<SpriteRenderer>();
+            renderer.sharedMaterial = ZirconRuntimeSpriteMaterial.Shared;
             renderer.sprite = sprite;
+            renderer.color = Color.white;
             renderer.sortingOrder = -cell.Y + (front ? 1 : -1);
             return true;
         }

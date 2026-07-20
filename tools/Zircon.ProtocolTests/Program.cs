@@ -280,12 +280,20 @@ internal static class Program
     private static void TestWorldInventoryAndBuffState()
     {
         var world = new ZirconWorldState();
+        world.SetItemStackSizeResolver(infoIndex => infoIndex == 137 ? 20 : 1);
         byte[] gainedPayload = WritePayload(writer =>
         {
-            writer.Write(true); writer.Write(1); writer.Write(true); WriteUserItem(writer, 801, 137, 12);
+            writer.Write(true); writer.Write(1); writer.Write(true); WriteUserItem(writer, 801, 137, 12, 27);
         });
         var gained = new ZirconPacketFrame(gainedPayload.Length + 6, ZirconPacketIds.Server.ItemsGained, gainedPayload, Array.Empty<byte>());
         True(world.ApplyPacket(gained, out _), "world apply gained");
+
+        byte[] stackedPayload = WritePayload(writer =>
+        {
+            writer.Write(true); writer.Write(1); writer.Write(true); WriteUserItem(writer, 802, 137, 5, 31);
+        });
+        var stacked = new ZirconPacketFrame(stackedPayload.Length + 6, ZirconPacketIds.Server.ItemsGained, stackedPayload, Array.Empty<byte>());
+        True(world.ApplyPacket(stacked, out _), "world apply gained stack increment");
 
         byte[] buffPayload = WritePayload(writer =>
         {
@@ -297,7 +305,8 @@ internal static class Program
 
         ZirconWorldSnapshot snapshot = world.GetSnapshot();
         Equal(1, snapshot.Inventory.Count, "world inventory count");
-        Equal(12L, snapshot.Inventory[0].Count, "world inventory stack");
+        Equal(17L, snapshot.Inventory[0].Count, "world inventory stack increment");
+        Equal(0, snapshot.Inventory[0].Slot, "world gained ignores transient packet slot");
         Equal(1, snapshot.Buffs.Count, "world buff count");
         Equal(101, snapshot.Buffs[0].Type, "world buff type");
     }
@@ -307,10 +316,10 @@ internal static class Program
         writer.Write(key3); writer.Write(key4); writer.Write(level); writer.Write(experience); writer.Write(cooldownTicks);
     }
 
-    private static void WriteUserItem(BinaryWriter writer, int index, int infoIndex, long count)
+    private static void WriteUserItem(BinaryWriter writer, int index, int infoIndex, long count, int slot = 0)
     {
         writer.Write(index); writer.Write(infoIndex); writer.Write(10); writer.Write(10); writer.Write(count);
-        writer.Write(0); writer.Write(1); writer.Write(0m); writer.Write(0); writer.Write(0L); writer.Write(0L);
+        writer.Write(slot); writer.Write(1); writer.Write(0m); writer.Write(0); writer.Write(0L); writer.Write(0L);
         writer.Write(true); writer.Write(true); writer.Write(1); writer.Write(10); writer.Write(25); writer.Write(0); writer.Write(0L);
     }
 

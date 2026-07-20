@@ -15,9 +15,11 @@ namespace Zircon.Mobile.Editor
         [MenuItem("Zircon/Build Android")]
         public static void BuildAndroid()
         {
-                        if (EnabledScenes().Length == 0)
+            ZirconSceneDiagnostics.ValidateFromCommandLine();
+            if (EnabledScenes().Length == 0)
                 ZirconProjectBootstrap.SetupProject();
-ConfigurePlayer();
+            ConfigurePlayer();
+            EnsureRuntimeSpriteMaterial();
             StageGeneratedAssets();
             try
             {
@@ -49,6 +51,28 @@ ConfigurePlayer();
             PlayerSettings.Android.targetSdkVersion = AndroidSdkVersions.AndroidApiLevelAuto;
         }
 
+        private static void EnsureRuntimeSpriteMaterial()
+        {
+            const string assetPath = "Assets/Resources/ZirconRuntimeSprites.mat";
+            Material material = AssetDatabase.LoadAssetAtPath<Material>(assetPath);
+            Shader shader = Shader.Find("Zircon/RuntimeSprite");
+            if (shader == null || !shader.isSupported)
+                throw new InvalidOperationException("Zircon/RuntimeSprite shader is unavailable for the Android build.");
+
+            if (material == null)
+            {
+                Directory.CreateDirectory("Assets/Resources");
+                material = new Material(shader) { name = "ZirconRuntimeSprites" };
+                AssetDatabase.CreateAsset(material, assetPath);
+            }
+            else if (material.shader != shader)
+            {
+                material.shader = shader;
+                EditorUtility.SetDirty(material);
+            }
+            AssetDatabase.SaveAssets();
+        }
+
         private static string[] EnabledScenes()
         {
             var scenes = new List<string>();
@@ -59,10 +83,18 @@ ConfigurePlayer();
 
         private static void StageGeneratedAssets()
         {
+            ClearStagedGeneratedAssets();
+            ZirconProductionAssetManifestBuilder.Build();
             string source = Path.GetFullPath("Assets/Generated");
             string target = Path.GetFullPath("Assets/StreamingAssets/Zircon/Generated");
-            ClearStagedGeneratedAssets();
             CopyDirectory(source, target);
+            string bundleTarget = Path.GetFullPath("Assets/StreamingAssets/Zircon/Bundles/Android");
+            Directory.CreateDirectory(bundleTarget);
+            AssetBundleManifest bundles = BuildPipeline.BuildAssetBundles(bundleTarget,
+                BuildAssetBundleOptions.ChunkBasedCompression | BuildAssetBundleOptions.DeterministicAssetBundle,
+                BuildTarget.Android);
+            if (bundles == null)
+                throw new InvalidOperationException("P2 Android resource chunks failed to build.");
             AssetDatabase.Refresh();
         }
 
@@ -72,6 +104,10 @@ ConfigurePlayer();
             if (Directory.Exists(target)) Directory.Delete(target, true);
             string meta = target + ".meta";
             if (File.Exists(meta)) File.Delete(meta);
+            string bundles = Path.GetFullPath("Assets/StreamingAssets/Zircon/Bundles");
+            if (Directory.Exists(bundles)) Directory.Delete(bundles, true);
+            string bundlesMeta = bundles + ".meta";
+            if (File.Exists(bundlesMeta)) File.Delete(bundlesMeta);
             AssetDatabase.Refresh();
         }
 

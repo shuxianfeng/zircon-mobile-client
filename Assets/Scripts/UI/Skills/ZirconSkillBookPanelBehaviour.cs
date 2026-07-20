@@ -75,9 +75,11 @@ namespace Zircon.Mobile.UI.Skills
             ZirconSkillState selected = FindSkill(snapshot, selectedInfoIndex);
             ZirconSystemCatalogBehaviour.MagicEntry selectedInfo = selected == null ? null : catalog?.GetMagic(selected.InfoIndex);
             if (selectedNameText != null)
-                selectedNameText.text = selectedInfo?.Name ?? string.Empty;
+                selectedNameText.text = skills == null || skills.Count == 0 ? "尚未学习技能" : selectedInfo?.Name ?? "请选择技能";
             if (selectedDetailText != null)
-                selectedDetailText.text = selected == null ? string.Empty : $"Lv.{selected.Level}  EXP {selected.Experience}\n{selectedInfo?.Description ?? string.Empty}";
+                selectedDetailText.text = skills == null || skills.Count == 0
+                    ? "当前角色没有服务端下发的已学习技能。可点击“特效自检”检查本地特效渲染。"
+                    : selected == null ? string.Empty : $"Lv.{selected.Level}  EXP {selected.Experience}\n{selectedInfo?.Description ?? string.Empty}";
 
             RefreshHotbar(snapshot);
         }
@@ -101,6 +103,7 @@ namespace Zircon.Mobile.UI.Skills
         {
             if (hotbarAssignButtons == null)
                 return;
+            bool hasSkills = snapshot?.Skills != null && snapshot.Skills.Count > 0;
             for (int index = 0; index < hotbarAssignButtons.Length; index++)
             {
                 byte key = (byte)(index + 1);
@@ -108,15 +111,25 @@ namespace Zircon.Mobile.UI.Skills
                 ZirconSystemCatalogBehaviour.MagicEntry info = skill == null ? null : catalog?.GetMagic(skill.InfoIndex);
                 TMP_Text label = hotbarAssignButtons[index]?.GetComponentInChildren<TMP_Text>();
                 if (label != null)
-                    label.text = info?.Name ?? string.Empty;
-                if (hotbarCasters != null && index < hotbarCasters.Length && hotbarCasters[index] != null && info != null)
-                    hotbarCasters[index].Configure(info.MagicType, info.Mode, info.Delay);
+                    label.text = !hasSkills ? index == 0 ? "特效自检" : "无技能" : info?.Name ?? "未绑定";
+                if (hotbarAssignButtons[index] != null)
+                    hotbarAssignButtons[index].interactable = hasSkills || index == 0;
+                if (hotbarCasters != null && index < hotbarCasters.Length && hotbarCasters[index] != null)
+                {
+                    if (info != null) hotbarCasters[index].Configure(info.MagicType, info.Mode, info.Delay);
+                    else hotbarCasters[index].ClearConfiguration();
+                }
             }
         }
 
         private async Task BindSelectedAsync(int hotbarIndex)
         {
             ZirconWorldSnapshot snapshot = session?.GetWorldSnapshot();
+            if ((snapshot?.Skills == null || snapshot.Skills.Count == 0) && hotbarIndex == 0)
+            {
+                ZirconProductionEntityPresentationBehaviour.PlayLocalEffectPreview();
+                return;
+            }
             ZirconSkillState selected = FindSkill(snapshot, selectedInfoIndex);
             ZirconSystemCatalogBehaviour.MagicEntry info = selected == null ? null : catalog?.GetMagic(selected.InfoIndex);
             if (selected == null || info == null || hotbarIndex < 0 || hotbarIndex > 3)

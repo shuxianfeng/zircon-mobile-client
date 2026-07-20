@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using Zircon.Mobile.UI.Login;
 
 namespace Zircon.Mobile.UI.Catalog
 {
@@ -52,6 +53,9 @@ namespace Zircon.Mobile.UI.Catalog
         private void Awake()
         {
             EnsureLoaded();
+            ZirconProtocolProbeBehaviour session = GetComponent<ZirconProtocolProbeBehaviour>();
+            session?.ConfigureItemStackSizeResolver(index => GetItem(index)?.StackSize ?? 1);
+            Debug.Log("Item stack catalog registered: items=" + items.Count + " session=" + (session != null));
         }
 
         private void EnsureLoaded()
