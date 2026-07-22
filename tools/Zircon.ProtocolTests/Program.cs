@@ -20,7 +20,9 @@ internal static class Program
         TestBuffPackets();
         TestNpcPackets();
         TestWorldInventoryAndBuffState();
-        Console.WriteLine("protocol tests passed=14");
+        TestClientChat();
+        TestMapTransitionPackets();
+        Console.WriteLine("protocol tests passed=16");
         return 0;
     }
 
@@ -275,6 +277,40 @@ internal static class Program
             Equal(3L, reader.ReadInt64(), "NPCBuy amount");
             True(!reader.ReadBoolean(), "NPCBuy personal funds");
         }
+    }
+
+    private static void TestClientChat()
+    {
+        ZirconPacketFrame frame = ReadFrame(ZirconClientPackets.Chat("@MAP 0"));
+        Equal(ZirconPacketIds.Client.Chat, frame.PacketId, "Client.Chat id");
+        using BinaryReader reader = PayloadReader(frame);
+        Equal("@MAP 0", reader.ReadString(), "Client.Chat text");
+        Equal(reader.BaseStream.Length, reader.BaseStream.Position, "Client.Chat deployed schema");
+    }
+
+    private static void TestMapTransitionPackets()
+    {
+        var world = new ZirconWorldState();
+
+        byte[] oldPayload = WritePayload(writer => writer.Write(6));
+        var oldFrame = new ZirconPacketFrame(oldPayload.Length + 6, ZirconPacketIds.Server.MapChanged, oldPayload, Array.Empty<byte>());
+        True(ZirconMapPacketDecoder.TryDecodeMapChanged(oldFrame, out ZirconMapChangedInfo oldMap), "old MapChanged decode");
+        Equal(6, oldMap.MapIndex, "old MapChanged map");
+        Equal(-1, oldMap.InstanceIndex, "old MapChanged instance");
+        True(world.ApplyPacket(oldFrame, out _), "world apply old MapChanged");
+        Equal(6, world.GetSnapshot().MapIndex, "world old MapChanged map");
+
+        byte[] newPayload = WritePayload(writer => { writer.Write(1); writer.Write(2); });
+        var newFrame = new ZirconPacketFrame(newPayload.Length + 6, ZirconPacketIds.Server.MapChanged, newPayload, Array.Empty<byte>());
+        True(ZirconMapPacketDecoder.TryDecodeMapChanged(newFrame, out ZirconMapChangedInfo newMap), "new MapChanged decode");
+        Equal(1, newMap.MapIndex, "new MapChanged map");
+        Equal(2, newMap.InstanceIndex, "new MapChanged instance");
+
+        byte[] locationPayload = WritePayload(writer => { writer.Write((byte)3); writer.Write(79); writer.Write(149); });
+        var locationFrame = new ZirconPacketFrame(locationPayload.Length + 6, ZirconPacketIds.Server.UserLocation, locationPayload, Array.Empty<byte>());
+        True(ZirconMapPacketDecoder.TryDecodeUserLocation(locationFrame, out ZirconUserLocationInfo location), "UserLocation decode");
+        True(world.ApplyPacket(locationFrame, out _), "world apply UserLocation");
+        Equal(new ZirconMapPoint(79, 149), world.GetSnapshot().Location, "world UserLocation");
     }
 
     private static void TestWorldInventoryAndBuffState()

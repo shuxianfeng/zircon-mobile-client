@@ -76,6 +76,8 @@ namespace Zircon.Mobile.Core.Protocol
         {
             public const ushort Login = 2003;
             public const ushort StartGame = 2012;
+            public const ushort MapChanged = 2013;
+            public const ushort UserLocation = 2014;
             public const ushort ObjectRemove = 2015;
             public const ushort ObjectTurn = 2016;
             public const ushort ObjectMove = 2019;
@@ -154,7 +156,3 @@ namespace Zircon.Mobile.Core.Protocol
         }
     }
 }
-
-
-
-

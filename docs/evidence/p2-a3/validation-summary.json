@@ -1,0 +1,11 @@
+{
+  "playerDirections": 8,
+  "playerFramesPerDirection": 4,
+  "playerCompositeCells": 32,
+  "monsterAnimationCells": 8,
+  "effectAnimationCells": 16,
+  "shadows": "passed",
+  "offsets": "passed",
+  "internalLayerOrder": "passed",
+  "ySorting": "passed"
+}

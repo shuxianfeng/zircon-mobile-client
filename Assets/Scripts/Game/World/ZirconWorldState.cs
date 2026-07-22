@@ -85,6 +85,12 @@ namespace Zircon.Mobile.Game.World
             if (ZirconServerPacketDecoder.TryDecodeStartGame(frame, out ZirconDecodedStartGame startGame))
                 return ApplyStartGame(startGame, out summary);
 
+            if (ZirconMapPacketDecoder.TryDecodeMapChanged(frame, out ZirconMapChangedInfo mapChanged))
+                return ApplyMapChanged(mapChanged, out summary);
+
+            if (ZirconMapPacketDecoder.TryDecodeUserLocation(frame, out ZirconUserLocationInfo userLocation))
+                return ApplyUserLocation(userLocation, out summary);
+
             if (ZirconInGamePacketDecoder.TryDecodeDataObjectPlayer(frame, out ZirconDataObjectPlayerInfo player))
                 return ApplyDataObjectPlayer(player, out summary);
 
@@ -372,6 +378,46 @@ namespace Zircon.Mobile.Game.World
             }
 
             summary = $"world local player id={info.ObjectId} map={info.MapIndex} xy={info.Location.X},{info.Location.Y} items={info.Items.Count} skills={info.Magics.Count} buffs={info.Buffs.Count}";
+            return true;
+        }
+
+        private bool ApplyMapChanged(ZirconMapChangedInfo changed, out string summary)
+        {
+            lock (syncRoot)
+            {
+                mapIndex = changed.MapIndex;
+                if (localPlayer != null)
+                    localPlayer.MapIndex = changed.MapIndex;
+
+                var removeIds = new List<uint>();
+                foreach (KeyValuePair<uint, ZirconEntityState> pair in entities)
+                {
+                    if (localPlayer == null || pair.Key != localPlayer.ObjectId)
+                        removeIds.Add(pair.Key);
+                }
+
+                foreach (uint objectId in removeIds)
+                    entities.Remove(objectId);
+            }
+
+            summary = $"world map changed map={changed.MapIndex} instance={changed.InstanceIndex}";
+            return true;
+        }
+
+        private bool ApplyUserLocation(ZirconUserLocationInfo update, out string summary)
+        {
+            lock (syncRoot)
+            {
+                location = update.Location;
+                if (localPlayer != null)
+                {
+                    localPlayer.Location = update.Location;
+                    localPlayer.Direction = update.Direction;
+                    localPlayer.LastUpdatedUtc = DateTime.UtcNow;
+                }
+            }
+
+            summary = $"world user location dir={update.Direction} xy={update.Location.X},{update.Location.Y}";
             return true;
         }
 
