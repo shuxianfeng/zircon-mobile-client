@@ -22,6 +22,11 @@ namespace Zircon.Mobile.UI.Login
         [SerializeField] private string host = "192.168.0.100";
         [SerializeField] private int port = 17000;
         [SerializeField] private bool preferIpv6;
+        [SerializeField] private bool autoSelectEndpointByNetwork = true;
+        [SerializeField] private string wifiLanHost = "192.168.0.100";
+        [SerializeField] private string cellularPublicHost = "zircon.35861344.xyz";
+        [SerializeField] private bool allowPublicFallbackOnWifi = true;
+        [SerializeField] private float networkTransportPollSeconds = 2f;
 
         [Header("Login")]
         [SerializeField] private string email;
@@ -46,6 +51,12 @@ namespace Zircon.Mobile.UI.Login
         private CancellationTokenSource cts;
         private Vector2 scrollPosition;
         private IReadOnlyList<ZirconCharacterSelectInfo> characters = Array.Empty<ZirconCharacterSelectInfo>();
+        private ZirconNetworkTransport activeTransport = ZirconNetworkTransport.Unknown;
+        private ZirconNetworkTransport observedTransport = ZirconNetworkTransport.Unknown;
+        private float nextNetworkTransportPoll;
+        private bool handlingNetworkSwitch;
+        private bool resumeCharacterAfterNetworkSwitch;
+        private TaskCompletionSource<bool> firstServerPacket;
 
         public event Action<IReadOnlyList<ZirconCharacterSelectInfo>> CharactersChanged;
         public event Action<ZirconConnectionState> ConnectionStateChanged;
@@ -60,39 +71,74 @@ namespace Zircon.Mobile.UI.Login
 
         private async void Start()
         {
+            observedTransport = ZirconNetworkEndpointResolver.DetectTransport();
             if (connectOnStart)
                 await ConnectAsync();
         }
 
-        private async Task ConnectAsync()
+        private async Task<bool> ConnectAsync()
         {
-            cts = new CancellationTokenSource();
-            var config = new ZirconClientConfig
-            {
-                Host = host,
-                Port = port,
-                PreferIpv6 = preferIpv6,
-            };
+            IReadOnlyList<ZirconNetworkEndpoint> endpoints = autoSelectEndpointByNetwork
+                ? ZirconNetworkEndpointResolver.Resolve(wifiLanHost, cellularPublicHost, port, allowPublicFallbackOnWifi)
+                : new[] { new ZirconNetworkEndpoint
+                {
+                    Profile = "手动", Host = host, Port = port, PreferIpv6 = preferIpv6,
+                    Transport = ZirconNetworkEndpointResolver.DetectTransport(),
+                }};
 
-            client = new ZirconNetworkClient(config);
-            client.Log += AppendLog;
-            client.StateChanged += state =>
-            {
-                AppendLog($"state changed: {state}");
-                pendingMainThreadActions.Enqueue(() => ConnectionStateChanged?.Invoke(state));
-            };
-            client.PacketReceived += OnPacketReceived;
             worldState.Reset();
             worldRenderer?.Clear();
+            Exception lastError = null;
+            foreach (ZirconNetworkEndpoint endpoint in endpoints)
+            {
+                cts?.Dispose();
+                cts = new CancellationTokenSource();
+                host = endpoint.Host;
+                preferIpv6 = endpoint.PreferIpv6;
+                var config = new ZirconClientConfig
+                {
+                    Host = endpoint.Host,
+                    Port = endpoint.Port,
+                    PreferIpv6 = endpoint.PreferIpv6,
+                    ConnectTimeoutMilliseconds = 4000,
+                };
 
-            try
-            {
-                await client.ConnectAsync(cts.Token);
+                ZirconNetworkClient candidate = new ZirconNetworkClient(config);
+                candidate.Log += AppendLog;
+                candidate.StateChanged += state =>
+                {
+                    AppendLog($"state changed: {state}");
+                    pendingMainThreadActions.Enqueue(() => ConnectionStateChanged?.Invoke(state));
+                };
+                var endpointHandshake = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                firstServerPacket = endpointHandshake;
+                candidate.PacketReceived += (sender, args) =>
+                {
+                    endpointHandshake.TrySetResult(true);
+                    OnPacketReceived(sender, args);
+                };
+                client = candidate;
+                AppendLog($"network profile={endpoint.Profile} transport={endpoint.Transport} endpoint={endpoint.Host}:{endpoint.Port}");
+                pendingMainThreadActions.Enqueue(() => LoginStatusChanged?.Invoke(endpoint.Profile + "：正在连接服务器"));
+                try
+                {
+                    await candidate.ConnectAsync(cts.Token);
+                    activeTransport = endpoint.Transport;
+                    observedTransport = endpoint.Transport;
+                    pendingMainThreadActions.Enqueue(() => LoginStatusChanged?.Invoke(endpoint.Profile + "：服务器已连接"));
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    lastError = ex;
+                    AppendLog($"connect failed profile={endpoint.Profile}: {ex.GetType().Name} {ex.Message}");
+                    candidate.Dispose();
+                    if (ReferenceEquals(client, candidate)) client = null;
+                }
             }
-            catch (Exception ex)
-            {
-                AppendLog($"connect failed: {ex.GetType().Name} {ex.Message}");
-            }
+            pendingMainThreadActions.Enqueue(() => LoginStatusChanged?.Invoke("服务器连接失败，请检查当前网络"));
+            AppendLog("all automatic endpoints failed: " + lastError?.Message);
+            return false;
         }
 
         private async void OnGUI()
@@ -146,7 +192,7 @@ namespace Zircon.Mobile.UI.Login
             password = plainPassword ?? string.Empty;
 
             if (client == null || cts == null || client.State == ZirconConnectionState.Disconnected)
-                await ConnectAsync();
+                if (!await ConnectAsync()) return;
 
             await LoginAsync();
         }
@@ -154,19 +200,42 @@ namespace Zircon.Mobile.UI.Login
         private async Task LoginAsync()
         {
             if (client == null)
-                await ConnectAsync();
+                if (!await ConnectAsync()) return;
 
             if (client == null)
                 return;
 
             try
             {
+                if (!await WaitForServerHandshakeAsync())
+                {
+                    AppendLog("login postponed: server did not send its initial handshake packet");
+                    pendingMainThreadActions.Enqueue(() => LoginStatusChanged?.Invoke("服务器未响应握手，请稍后重试"));
+                    client.Disconnect();
+                    return;
+                }
                 await client.SendLoginAsync(email, password, cts.Token);
             }
             catch (Exception ex)
             {
                 AppendLog($"login send failed: {ex.GetType().Name} {ex.Message}");
             }
+        }
+
+        private async Task<bool> WaitForServerHandshakeAsync()
+        {
+            TaskCompletionSource<bool> handshake = firstServerPacket;
+            if (handshake == null) return false;
+            if (!handshake.Task.IsCompleted)
+            {
+                Task timeout = Task.Delay(3000, cts.Token);
+                if (await Task.WhenAny(handshake.Task, timeout) != handshake.Task)
+                    return false;
+            }
+            // The Connected acknowledgement is written asynchronously by the protocol client.
+            // Give it one frame-sized window before the language/login packets follow it.
+            await Task.Delay(100, cts.Token);
+            return true;
         }
 
         public Task StartCharacterAsync(int characterIndex)
@@ -213,10 +282,16 @@ namespace Zircon.Mobile.UI.Login
                 foreach (ZirconCharacterSelectInfo character in login.Characters)
                     AppendLog($"character index={character.Index} name={character.Name} level={character.Level}");
 
-                if (login.Result == ZirconLoginResult.Success && startFirstCharacterAfterLogin && login.Characters.Count > 0)
+                if (login.Result == ZirconLoginResult.Success &&
+                    (startFirstCharacterAfterLogin || resumeCharacterAfterNetworkSwitch) && login.Characters.Count > 0)
                 {
                     int selected = startCharacterIndex >= 0 ? startCharacterIndex : login.Characters[0].Index;
+                    resumeCharacterAfterNetworkSwitch = false;
                     await client.SendStartGameAsync(selected, cts.Token);
+                }
+                else if (login.Result != ZirconLoginResult.Success)
+                {
+                    resumeCharacterAfterNetworkSwitch = false;
                 }
             }
             else if (ZirconServerPacketDecoder.TryDecodeStartGame(e.Frame, out ZirconDecodedStartGame startGame))
@@ -645,6 +720,48 @@ namespace Zircon.Mobile.UI.Login
 
             FlushLogs();
             worldRenderer?.Render(worldState.GetSnapshot());
+            PollNetworkTransport();
+        }
+
+        private void PollNetworkTransport()
+        {
+            if (!autoSelectEndpointByNetwork || handlingNetworkSwitch || Time.unscaledTime < nextNetworkTransportPoll)
+                return;
+            nextNetworkTransportPoll = Time.unscaledTime + Mathf.Max(1f, networkTransportPollSeconds);
+            ZirconNetworkTransport current = ZirconNetworkEndpointResolver.DetectTransport();
+            if (current == ZirconNetworkTransport.Unknown) return;
+            if (observedTransport == ZirconNetworkTransport.Unknown)
+            {
+                observedTransport = current;
+                return;
+            }
+            if (current == observedTransport) return;
+            ZirconNetworkTransport previous = observedTransport;
+            observedTransport = current;
+            _ = HandleNetworkSwitchAsync(previous, current);
+        }
+
+        private async Task HandleNetworkSwitchAsync(ZirconNetworkTransport previous, ZirconNetworkTransport current)
+        {
+            if (handlingNetworkSwitch) return;
+            handlingNetworkSwitch = true;
+            ZirconConnectionState previousState = ConnectionState;
+            bool resumeGame = (previousState == ZirconConnectionState.InGame || previousState == ZirconConnectionState.LoadingMap) &&
+                              !string.IsNullOrEmpty(email) && !string.IsNullOrEmpty(password) && startCharacterIndex >= 0;
+            resumeCharacterAfterNetworkSwitch = resumeGame;
+            AppendLog($"network switched {previous}->{current}; reconnecting automatically resumeGame={resumeGame}");
+            pendingMainThreadActions.Enqueue(() => LoginStatusChanged?.Invoke("网络已切换，正在自动重连…"));
+            Disconnect();
+            observedTransport = current;
+            try
+            {
+                if (await ConnectAsync() && resumeGame)
+                    await LoginAsync();
+            }
+            finally
+            {
+                handlingNetworkSwitch = false;
+            }
         }
 
         private void OnDestroy()
@@ -657,6 +774,7 @@ namespace Zircon.Mobile.UI.Login
             cts?.Cancel();
             client?.Dispose();
             client = null;
+            firstServerPacket = null;
             cts?.Dispose();
             cts = null;
             worldState.Reset();
@@ -667,5 +785,3 @@ namespace Zircon.Mobile.UI.Login
         }
     }
 }
-
-

@@ -9,10 +9,11 @@
 
   <ItemGroup>
     <Compile Include="..\..\Assets\Scripts\Core\Protocol\*.cs" LinkBase="Core\Protocol" />
-    <Compile Include="..\..\Assets\Scripts\Core\Network\*.cs" LinkBase="Core\Network" />
+    <Compile Include="..\..\Assets\Scripts\Core\Network\*.cs"
+             Exclude="..\..\Assets\Scripts\Core\Network\ZirconNetworkEndpointResolver.cs"
+             LinkBase="Core\Network" />
     <Compile Include="..\..\Assets\Scripts\Core\Models\*.cs" LinkBase="Core\Models" />
   </ItemGroup>
 </Project>
-
 
 

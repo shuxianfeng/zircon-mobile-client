@@ -35,7 +35,16 @@ namespace Zircon.Mobile.Core.Network
 
             IPAddress address = await ResolveAddressAsync(cancellationToken).ConfigureAwait(false);
             client = new TcpClient(address.AddressFamily) { NoDelay = true };
-            await client.ConnectAsync(address, config.Port).ConfigureAwait(false);
+            Task connectTask = client.ConnectAsync(address, config.Port);
+            Task timeoutTask = Task.Delay(Math.Max(500, config.ConnectTimeoutMilliseconds), cancellationToken);
+            Task completed = await Task.WhenAny(connectTask, timeoutTask).ConfigureAwait(false);
+            if (completed != connectTask)
+            {
+                client.Close();
+                cancellationToken.ThrowIfCancellationRequested();
+                throw new TimeoutException($"Connection to {config.Host}:{config.Port} timed out.");
+            }
+            await connectTask.ConfigureAwait(false);
             stream = client.GetStream();
 
             SetState(ZirconConnectionState.Connected);
@@ -278,6 +287,5 @@ namespace Zircon.Mobile.Core.Network
         }
     }
 }
-
 
 

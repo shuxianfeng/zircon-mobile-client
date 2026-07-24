@@ -8,5 +8,6 @@ namespace Zircon.Mobile.Core.Models
         public string Checksum { get; set; } = "MobileProbeCheck2026";
         public bool PreferIpv6 { get; set; } = false;
         public int ReceiveBufferSize { get; set; } = 8192;
+        public int ConnectTimeoutMilliseconds { get; set; } = 4000;
     }
 }
