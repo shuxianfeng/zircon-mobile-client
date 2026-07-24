@@ -8,11 +8,12 @@ namespace Zircon.Mobile.Game.World
     public sealed class ZirconWorldDebugRenderer : MonoBehaviour
     {
         [SerializeField] private float tileScale = 0.32f;
-        [SerializeField] private float markerSize = 0.28f;
+        [SerializeField] private float markerSize = 0.12f;
         [SerializeField] private bool useGeneratedSprites = true;
         [SerializeField] private string generatedTextureRoot = "Generated/Textures";
         [SerializeField] private float spritePixelsPerUnit = 100f;
         [SerializeField] private float spriteAnimationFps = 4f;
+        [SerializeField] private bool showFallbackMarkers;
 
         private readonly Dictionary<uint, SpriteRenderer> markers = new Dictionary<uint, SpriteRenderer>();
         private readonly Dictionary<ZirconEntityKind, List<Sprite>> spritesByKind = new Dictionary<ZirconEntityKind, List<Sprite>>();
@@ -40,6 +41,9 @@ namespace Zircon.Mobile.Game.World
                 seen.Add(entity.ObjectId);
                 SpriteRenderer renderer = GetOrCreate(entity.ObjectId);
                 Sprite sprite = GetSprite(entity, snapshot);
+                bool isLocalPlayer = snapshot.LocalPlayer != null &&
+                                     entity.ObjectId == snapshot.LocalPlayer.ObjectId;
+                renderer.enabled = !isLocalPlayer && (sprite != markerSprite || showFallbackMarkers);
                 renderer.transform.localPosition = ToWorldPosition(entity.Location.X, entity.Location.Y);
                 renderer.transform.localScale = sprite == markerSprite ? Vector3.one * markerSize : Vector3.one;
                 renderer.sprite = sprite;
@@ -229,7 +233,7 @@ namespace Zircon.Mobile.Game.World
                 case ZirconEntityKind.Player:
                     return new Color(0.2f, 0.75f, 1f, 1f);
                 case ZirconEntityKind.Monster:
-                    return entity.Dead ? new Color(0.45f, 0.15f, 0.15f, 0.75f) : new Color(1f, 0.25f, 0.2f, 1f);
+            return entity.Dead ? new Color(0.45f, 0.15f, 0.15f, 0.35f) : new Color(1f, 0.25f, 0.2f, 0.55f);
                 case ZirconEntityKind.Npc:
                     return new Color(1f, 0.85f, 0.15f, 1f);
                 case ZirconEntityKind.Spell:

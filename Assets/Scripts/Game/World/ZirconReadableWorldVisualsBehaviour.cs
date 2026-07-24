@@ -118,7 +118,7 @@ namespace Zircon.Mobile.Game.World
 
                 float scale = 1f;
                 if (snapshot.LocalPlayer != null && objectId == snapshot.LocalPlayer.ObjectId)
-                    scale = 1.8f;
+                    scale = 1f;
                 else if (kind == ZirconEntityKind.Player)
                     scale = 1.55f;
                 else if (kind == ZirconEntityKind.Npc)

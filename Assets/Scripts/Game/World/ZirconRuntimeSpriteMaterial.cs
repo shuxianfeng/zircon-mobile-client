@@ -5,6 +5,7 @@ namespace Zircon.Mobile.Game.World
     public static class ZirconRuntimeSpriteMaterial
     {
         private static Material shared;
+        private static Material mapObjects;
 
         public static Material Shared
         {
@@ -38,6 +39,25 @@ namespace Zircon.Mobile.Game.World
                 };
                 Debug.Log("P2 runtime sprite material: shader=" + shader.name + " supported=" + shader.isSupported);
                 return shared;
+            }
+        }
+
+        public static Material MapObjects
+        {
+            get
+            {
+                if (mapObjects != null)
+                    return mapObjects;
+                Material source = Shared;
+                if (source == null)
+                    return null;
+                mapObjects = new Material(source)
+                {
+                    name = "P2_RuntimeMapObjects",
+                    hideFlags = HideFlags.HideAndDontSave,
+                };
+                mapObjects.SetFloat("_LegacyDitherShadow", 1f);
+                return mapObjects;
             }
         }
     }

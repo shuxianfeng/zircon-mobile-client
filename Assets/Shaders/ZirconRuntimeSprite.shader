@@ -5,6 +5,7 @@ Shader "Zircon/RuntimeSprite"
         [PerRendererData] _MainTex ("Sprite Texture", 2D) = "white" {}
         _Color ("Tint", Color) = (1,1,1,1)
         [MaterialToggle] PixelSnap ("Pixel snap", Float) = 0
+        [HideInInspector] _LegacyDitherShadow ("Legacy dither shadow", Float) = 0
     }
 
     SubShader
@@ -32,6 +33,8 @@ Shader "Zircon/RuntimeSprite"
             #pragma multi_compile _ PIXELSNAP_ON
             #include "UnitySprites.cginc"
 
+            fixed _LegacyDitherShadow;
+
             fixed4 ZirconSpriteFrag(v2f IN) : SV_Target
             {
                 fixed4 colour = SampleSpriteTexture(IN.texcoord) * IN.color;
@@ -40,6 +43,13 @@ Shader "Zircon/RuntimeSprite"
                 if (colour.r > 0.75 && colour.b > 0.75 && colour.g < 0.50)
                     discard;
                 clip(colour.a - 0.01);
+                // Legacy map objects encoded translucent shadows as isolated
+                // opaque black pixels. Preserve real dark artwork while
+                // restoring only the near-exact black dither to soft shadow.
+                if (_LegacyDitherShadow > 0.5 &&
+                    colour.a > 0.99 &&
+                    max(colour.r, max(colour.g, colour.b)) < 0.02)
+                    colour.a = 0.36;
                 colour.rgb *= colour.a;
                 return colour;
             }

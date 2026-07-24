@@ -21,10 +21,11 @@ namespace Zircon.Mobile.Editor
             ZirconMapDebugRenderer map = Find<ZirconMapDebugRenderer>();
             ZirconWorldDebugRenderer world = Find<ZirconWorldDebugRenderer>();
             ZirconFixedCenterJoystickBehaviour joystick = Find<ZirconFixedCenterJoystickBehaviour>();
-            if (session == null || map == null || world == null || joystick == null)
-                throw new InvalidOperationException("Map 1 / character / joystick dependencies are incomplete.");
+            if (session == null || map == null || world == null)
+                throw new InvalidOperationException(
+                    $"Map / character dependencies are incomplete. session={session != null} map={map != null} world={world != null}.");
 
-            Set(joystick, "repeatSeconds", 0.65f);
+            if (joystick != null) Set(joystick, "repeatSeconds", 0.65f);
 
             ZirconMapOneVisualLoaderBehaviour floor = map.GetComponent<ZirconMapOneVisualLoaderBehaviour>();
             if (floor == null) floor = map.gameObject.AddComponent<ZirconMapOneVisualLoaderBehaviour>();
@@ -36,14 +37,16 @@ namespace Zircon.Mobile.Editor
 
             ZirconComposedLocalPlayerBehaviour old = world.GetComponent<ZirconComposedLocalPlayerBehaviour>();
             if (old != null) old.enabled = false;
-            ZirconFemaleWarriorPlayerBehaviour player = world.GetComponent<ZirconFemaleWarriorPlayerBehaviour>();
-            if (player == null) player = world.gameObject.AddComponent<ZirconFemaleWarriorPlayerBehaviour>();
+            int removedMissingScripts = RemoveMissingComponents(world.gameObject);
+            ZirconProductionLocalPlayerBehaviour player = world.GetComponent<ZirconProductionLocalPlayerBehaviour>();
+            if (player == null) player = world.gameObject.AddComponent<ZirconProductionLocalPlayerBehaviour>();
+            BindScriptAsset(player, "Assets/Scripts/Game/World/ZirconProductionLocalPlayerBehaviour.cs");
             Set(player, "session", session); Set(player, "worldRenderer", world);
 
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene);
             AssetDatabase.SaveAssets();
-            Debug.Log("P0 map 1, female warrior and 0.65-second joystick throttle bound.");
+            Debug.Log($"P0 map visuals and production local player bound. joystick={joystick != null} removedMissingScripts={removedMissingScripts}.");
         }
 
         private static void Set(UnityEngine.Object target, string name, object value)
@@ -53,6 +56,33 @@ namespace Zircon.Mobile.Editor
             if (property == null) throw new MissingFieldException(target.GetType().Name, name);
             if (value is UnityEngine.Object unityObject) property.objectReferenceValue = unityObject;
             else if (value is float number) property.floatValue = number;
+            serialized.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        private static int RemoveMissingComponents(GameObject target)
+        {
+            SerializedObject serialized = new SerializedObject(target);
+            SerializedProperty components = serialized.FindProperty("m_Component");
+            int removed = 0;
+            for (int index = components.arraySize - 1; index >= 0; index--)
+            {
+                SerializedProperty reference = components.GetArrayElementAtIndex(index).FindPropertyRelative("component");
+                if (reference.objectReferenceValue != null) continue;
+                components.DeleteArrayElementAtIndex(index);
+                removed++;
+            }
+            if (removed > 0) serialized.ApplyModifiedPropertiesWithoutUndo();
+            return removed;
+        }
+
+        private static void BindScriptAsset(MonoBehaviour target, string assetPath)
+        {
+            MonoScript script = AssetDatabase.LoadAssetAtPath<MonoScript>(assetPath);
+            if (script == null || script.GetClass() != target.GetType())
+                throw new InvalidOperationException($"Unable to bind MonoScript asset {assetPath} to {target.GetType().FullName}.");
+            SerializedObject serialized = new SerializedObject(target);
+            SerializedProperty property = serialized.FindProperty("m_Script");
+            property.objectReferenceValue = script;
             serialized.ApplyModifiedPropertiesWithoutUndo();
         }
 
@@ -72,7 +102,12 @@ namespace Zircon.Mobile.Editor
             string root = Path.GetFullPath("Assets/StreamingAssets/Zircon/Generated/Textures/MapData");
             if (!Directory.Exists(root)) return;
             foreach (string file in Directory.GetFiles(root, "*.manifest.json", SearchOption.AllDirectories))
+            {
+                if (file.IndexOf(Path.DirectorySeparatorChar + "Map6" + Path.DirectorySeparatorChar,
+                        StringComparison.OrdinalIgnoreCase) >= 0)
+                    continue;
                 File.Delete(file);
+            }
             AssetDatabase.Refresh();
         }
     }

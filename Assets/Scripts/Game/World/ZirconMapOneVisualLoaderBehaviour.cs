@@ -1,4 +1,3 @@
-using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
@@ -9,51 +8,106 @@ using Zircon.Mobile.UI.Login;
 
 namespace Zircon.Mobile.Game.World
 {
-    /// <summary>Loads the real Bitche county (map 1 / 0.map) floor tiles on Android.</summary>
+    /// <summary>
+    /// Loads packaged production map regions by live map index.
+    /// The historical class name is retained so existing scene references remain valid.
+    /// </summary>
     public sealed class ZirconMapOneVisualLoaderBehaviour : MonoBehaviour
     {
         [SerializeField] private ZirconProtocolProbeBehaviour session;
         [SerializeField] private ZirconMapDebugRenderer mapRenderer;
+        [SerializeField] private int chunkSize = 96;
+        [SerializeField] private int reloadMargin = 24;
         private bool loading;
-        private bool loaded;
+        private int loadedMapIndex = -1;
+        private int loadedMapWidth;
+        private int loadedMapHeight;
+        private RectInt loadedView;
+        private readonly Dictionary<int, ZirconMapManifest> sourceManifests =
+            new Dictionary<int, ZirconMapManifest>();
+
+        private readonly struct MapDefinition
+        {
+            public MapDefinition(int mapIndex, string manifest, string textureSourceRoot)
+            {
+                MapIndex = mapIndex;
+                Manifest = manifest;
+                TextureSourceRoot = textureSourceRoot;
+            }
+
+            public int MapIndex { get; }
+            public string Manifest { get; }
+            public string TextureSourceRoot { get; }
+        }
 
         private void Update()
         {
-            if (loading || loaded || session == null || !session.IsInGame)
+            if (loading || session == null || !session.IsInGame)
                 return;
             ZirconWorldSnapshot snapshot = session.GetWorldSnapshot();
-            if (snapshot != null && snapshot.MapIndex == 1)
-                StartCoroutine(LoadMap());
+            if (snapshot == null)
+                return;
+            if (TryGetDefinition(snapshot.MapIndex, out MapDefinition definition) &&
+                NeedsReload(snapshot))
+                StartCoroutine(LoadMap(definition, snapshot.Location.X, snapshot.Location.Y));
         }
 
-        private IEnumerator LoadMap()
+        private bool NeedsReload(ZirconWorldSnapshot snapshot)
+        {
+            if (snapshot.MapIndex != loadedMapIndex)
+                return true;
+            if (snapshot.MapIndex != 5 && snapshot.MapIndex != 6)
+                return false;
+            int right = loadedView.xMax;
+            int bottom = loadedView.yMax;
+            return (loadedView.x > 0 && snapshot.Location.X < loadedView.x + reloadMargin) ||
+                   (right < loadedMapWidth && snapshot.Location.X >= right - reloadMargin) ||
+                   (loadedView.y > 0 && snapshot.Location.Y < loadedView.y + reloadMargin) ||
+                   (bottom < loadedMapHeight && snapshot.Location.Y >= bottom - reloadMargin);
+        }
+
+        private IEnumerator LoadMap(MapDefinition definition, int centerX, int centerY)
         {
             loading = true;
             if (mapRenderer == null)
             {
-                Debug.LogError("Map 1 floor loader cannot start because ZirconMapDebugRenderer is missing.");
-                loaded = true;
-                loading = false;
-                yield break;
-            }
-            string json = null;
-            string error = null;
-            yield return ZirconAssetStore.LoadText("Generated/Data/Maps/0.map.manifest.json",
-                value => json = value, value => error = value);
-            ZirconMapManifest manifest = string.IsNullOrEmpty(json) ? null : JsonUtility.FromJson<ZirconMapManifest>(json);
-            if (manifest == null || manifest.SampleCells == null)
-            {
-                Debug.LogError("Map 1 manifest failed: " + error);
+                Debug.LogError("Production map loader cannot start because ZirconMapDebugRenderer is missing.");
                 loading = false;
                 yield break;
             }
 
+            ZirconMapManifest sourceManifest = null;
+            string error = null;
+            if (!sourceManifests.TryGetValue(definition.MapIndex, out sourceManifest))
+            {
+                string sourceJson = null;
+                string manifestRelative = "Generated/Data/Maps/" + definition.Manifest;
+                yield return ZirconAssetStore.LoadText(manifestRelative,
+                    value => sourceJson = value, value => error = value);
+                sourceManifest = string.IsNullOrEmpty(sourceJson)
+                    ? null
+                    : JsonUtility.FromJson<ZirconMapManifest>(sourceJson);
+                if (sourceManifest != null)
+                    sourceManifests[definition.MapIndex] = sourceManifest;
+            }
+            if (sourceManifest == null || sourceManifest.SampleCells == null)
+            {
+                Debug.LogError("Production map manifest failed map=" + definition.MapIndex + ": " + error);
+                loading = false;
+                yield break;
+            }
+            ZirconMapManifest manifest = definition.MapIndex == 5 || definition.MapIndex == 6
+                ? CreateChunk(sourceManifest, centerX, centerY)
+                : sourceManifest;
+            string json = JsonUtility.ToJson(manifest);
+
             var tiles = new HashSet<string>();
             foreach (ZirconMapCellManifest cell in manifest.SampleCells)
             {
-                if (cell.BackImage <= 0) continue;
-                if (cell.BackFile == 0) tiles.Add("Tilesc:" + cell.BackImage);
-                else if (cell.BackFile == 1) tiles.Add("Tiles30c:" + cell.BackImage);
+                if (cell.BackImage <= 0 ||
+                    !ZirconMapDebugRenderer.TryGetMapLibraryFolder(cell.BackFile, out string folder))
+                    continue;
+                tiles.Add(folder + ":" + cell.BackImage);
             }
 
             string visualRoot = Path.Combine(Application.persistentDataPath, "Zircon", "RuntimeVisuals");
@@ -64,13 +118,19 @@ namespace Zircon.Mobile.Game.World
                 string[] parts = tile.Split(':');
                 string folder = parts[0];
                 int index = int.Parse(parts[1]);
-                string file = folder + "_" + index.ToString("D5") + "_image.png";
+                string sourceName = ZirconMapDebugRenderer.GetMapLibrarySourceName(folder);
+                string sourceFile = sourceName + "_" + index.ToString("D5") + "_image.png";
+                string runtimeFile = folder + "_" + index.ToString("D5") + "_image.png";
+                string source = "Generated/Textures/MapData/" +
+                                definition.TextureSourceRoot + folder + "/" + sourceFile;
                 byte[] bytes = null;
-                yield return ZirconAssetStore.LoadBytes("Generated/Textures/MapData/Base_" + folder + "/" + file,
+                yield return ZirconAssetStore.LoadBytes(source,
                     value => bytes = value,
-                    value => Debug.LogError("Map 1 floor missing " + file + ": " + value));
-                if (bytes == null || bytes.Length == 0) continue;
-                string destination = Path.Combine(textureRoot, folder, file);
+                    value => Debug.LogWarning("Production map tile missing map=" +
+                                              definition.MapIndex + " file=" + sourceFile + ": " + value));
+                if (bytes == null || bytes.Length == 0)
+                    continue;
+                string destination = Path.Combine(textureRoot, folder, runtimeFile);
                 Directory.CreateDirectory(Path.GetDirectoryName(destination));
                 File.WriteAllBytes(destination, bytes);
                 copied++;
@@ -78,25 +138,74 @@ namespace Zircon.Mobile.Game.World
 
             string mapRoot = Path.Combine(visualRoot, "Generated", "Data", "Maps");
             Directory.CreateDirectory(mapRoot);
-            string runtimeManifest = Path.Combine(mapRoot, "0.map.manifest.json");
+            string runtimeManifest = Path.Combine(mapRoot, definition.Manifest);
             File.WriteAllText(runtimeManifest, json);
             SetField(mapRenderer, "generatedTextureRoot", textureRoot);
-            ClearDictionary(mapRenderer, "tileSprites");
+            mapRenderer.ClearTileCache();
             mapRenderer.RenderManifest(runtimeManifest);
-            loaded = true;
+            loadedMapIndex = definition.MapIndex;
+            loadedMapWidth = sourceManifest.Width;
+            loadedMapHeight = sourceManifest.Height;
+            loadedView = new RectInt(manifest.ViewX, manifest.ViewY, manifest.ViewWidth, manifest.ViewHeight);
             loading = false;
-            Debug.Log("Map 1 real floor ready: " + copied + "/" + tiles.Count + " tiles");
+            Debug.Log("P2-B production map ready: map=" + definition.MapIndex +
+                      " source=" + manifest.Source +
+                      " view=" + manifest.ViewX + "," + manifest.ViewY + "," +
+                      manifest.ViewWidth + "," + manifest.ViewHeight +
+                      " floorTiles=" + copied + "/" + tiles.Count);
+        }
+
+        private ZirconMapManifest CreateChunk(ZirconMapManifest source, int centerX, int centerY)
+        {
+            int width = Mathf.Min(chunkSize, source.Width);
+            int height = Mathf.Min(chunkSize, source.Height);
+            int x = Mathf.Clamp(centerX - width / 2, 0, source.Width - width);
+            int y = Mathf.Clamp(centerY - height / 2, 0, source.Height - height);
+            var cells = new List<ZirconMapCellManifest>(width * height);
+            int right = x + width;
+            int bottom = y + height;
+            foreach (ZirconMapCellManifest cell in source.SampleCells)
+                if (cell.X >= x && cell.X < right && cell.Y >= y && cell.Y < bottom)
+                    cells.Add(cell);
+            return new ZirconMapManifest
+            {
+                Source = source.Source,
+                Width = source.Width,
+                Height = source.Height,
+                BlockingCells = source.BlockingCells,
+                NonEmptyCells = source.NonEmptyCells,
+                ViewX = x,
+                ViewY = y,
+                ViewWidth = width,
+                ViewHeight = height,
+                SampleCells = cells,
+            };
+        }
+
+        private static bool TryGetDefinition(int mapIndex, out MapDefinition definition)
+        {
+            switch (mapIndex)
+            {
+                case 1:
+                    definition = new MapDefinition(1, "0.map.manifest.json", "Base_");
+                    return true;
+                case 5:
+                    definition = new MapDefinition(5, "1.map.manifest.json", "Map5/");
+                    return true;
+                case 6:
+                    definition = new MapDefinition(6, "2.map.manifest.json", "Map6/");
+                    return true;
+                default:
+                    definition = default;
+                    return false;
+            }
         }
 
         private static void SetField(object target, string name, object value)
         {
-            target?.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)?.SetValue(target, value);
+            target?.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)
+                ?.SetValue(target, value);
         }
 
-        private static void ClearDictionary(object target, string name)
-        {
-            object value = target?.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(target);
-            if (value is System.Collections.IDictionary dictionary) dictionary.Clear();
-        }
     }
 }

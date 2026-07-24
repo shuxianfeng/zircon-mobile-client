@@ -10107,6 +10107,7 @@ MonoBehaviour:
   doubleTapSeconds: 0.35
   attackRepeatSeconds: 0.45
   npcRepeatSeconds: 1
+  autoApproachRepeatSeconds: 0.34
 --- !u!114 &722865346
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -29099,6 +29100,11 @@ MonoBehaviour:
   host: 192.168.0.100
   port: 17000
   preferIpv6: 0
+  autoSelectEndpointByNetwork: 1
+  wifiLanHost: 192.168.0.100
+  cellularPublicHost: zircon.35861344.xyz
+  allowPublicFallbackOnWifi: 1
+  networkTransportPollSeconds: 2
   email: 
   password: 
   startCharacterIndex: -1
@@ -29121,11 +29127,12 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   tileScale: 0.32
-  markerSize: 0.28
+  markerSize: 0.12
   useGeneratedSprites: 1
   generatedTextureRoot: Generated/Textures
   spritePixelsPerUnit: 100
   spriteAnimationFps: 0
+  showFallbackMarkers: 0
 --- !u!114 &1805902719
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -29160,7 +29167,9 @@ MonoBehaviour:
   tileSize: {x: 0.3, y: 0.3}
   tilePixelsPerUnit: 150
   renderOnStart: 0
-  maxRenderedCells: 4096
+  maxRenderedCells: 0
+  showFallbackCells: 0
+  backgroundTileVerticalScale: 1.5
 --- !u!4 &1805902721
 Transform:
   m_ObjectHideFlags: 0
@@ -29294,6 +29303,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   session: {fileID: 1805902717}
   mapRenderer: {fileID: 1805902720}
+  chunkSize: 96
+  reloadMargin: 24
 --- !u!1001 &1810294069
 PrefabInstance:
   m_ObjectHideFlags: 0

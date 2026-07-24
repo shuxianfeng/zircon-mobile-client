@@ -175,7 +175,7 @@ namespace Zircon.Mobile.Editor
 
         private static string ChunkForSet(ZirconRuntimeSpriteSet set)
         {
-            if (set.Id.StartsWith("player.warrior.", StringComparison.OrdinalIgnoreCase)) return "zircon-p2-character";
+            if (set.Id.StartsWith("player.", StringComparison.OrdinalIgnoreCase)) return "zircon-p2-character";
             if (set.Id.StartsWith("effect.", StringComparison.OrdinalIgnoreCase)) return "zircon-p2-effects";
             return "zircon-p2-entities";
         }
