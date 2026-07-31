@@ -40,6 +40,9 @@ namespace Zircon.Mobile.Game.World
         private bool npcDialogOpen;
         private uint npcObjectId;
         private int npcPageIndex;
+        private volatile bool snapshotDirty = true;
+        private ZirconWorldSnapshot cachedSnapshot;
+        private DateTime cachedSnapshotUtc;
 
         public void Reset()
         {
@@ -74,10 +77,23 @@ namespace Zircon.Mobile.Game.World
                 npcDialogOpen = false;
                 npcObjectId = 0;
                 npcPageIndex = 0;
+                cachedSnapshot = null;
+                snapshotDirty = true;
             }
         }
 
         public bool ApplyPacket(ZirconPacketFrame frame, out string summary)
+        {
+            lock (syncRoot)
+            {
+                bool applied = ApplyPacketCore(frame, out summary);
+                if (applied)
+                    snapshotDirty = true;
+                return applied;
+            }
+        }
+
+        private bool ApplyPacketCore(ZirconPacketFrame frame, out string summary)
         {
             if (ZirconServerPacketDecoder.TryDecodeLogin(frame, out ZirconDecodedLogin login))
                 return ApplyLogin(login, out summary);
@@ -233,6 +249,7 @@ namespace Zircon.Mobile.Game.World
                 skill.Set2Key = set2Key;
                 skill.Set3Key = set3Key;
                 skill.Set4Key = set4Key;
+                snapshotDirty = true;
                 return true;
             }
         }
@@ -240,6 +257,12 @@ namespace Zircon.Mobile.Game.World
         {
             lock (syncRoot)
             {
+                DateTime snapshotUtc = DateTime.UtcNow;
+                bool timedStateNeedsRefresh = buffs.Count > 0 &&
+                                              (snapshotUtc - cachedSnapshotUtc).TotalSeconds >= 0.25;
+                if (!snapshotDirty && !timedStateNeedsRefresh && cachedSnapshot != null)
+                    return cachedSnapshot;
+
                 var entityCopies = new List<ZirconEntityState>(entities.Count);
                 foreach (ZirconEntityState entity in entities.Values)
                     entityCopies.Add(entity.Clone());
@@ -266,7 +289,6 @@ namespace Zircon.Mobile.Game.World
                 equipmentCopies.Sort((left, right) => left.Slot.CompareTo(right.Slot));
                 storageCopies.Sort((left, right) => left.Slot.CompareTo(right.Slot));
 
-                DateTime snapshotUtc = DateTime.UtcNow;
                 var buffCopies = new List<ZirconBuffState>(buffs.Count);
                 foreach (ZirconBuffState buff in buffs.Values)
                     buffCopies.Add(buff.Clone(snapshotUtc));
@@ -274,7 +296,7 @@ namespace Zircon.Mobile.Game.World
                 var questCopies = new List<ZirconQuestState>(quests.Count);
                 foreach (ZirconQuestState quest in quests.Values)
                     questCopies.Add(quest.Clone());
-                return new ZirconWorldSnapshot(
+                cachedSnapshot = new ZirconWorldSnapshot(
                     localPlayer?.Clone(),
                     entityCopies,
                     chatCopies,
@@ -302,6 +324,9 @@ namespace Zircon.Mobile.Game.World
                     npcDialogOpen,
                     npcObjectId,
                     npcPageIndex);
+                cachedSnapshotUtc = snapshotUtc;
+                snapshotDirty = false;
+                return cachedSnapshot;
             }
         }
 
@@ -412,6 +437,7 @@ namespace Zircon.Mobile.Game.World
                 if (localPlayer != null)
                 {
                     localPlayer.Location = update.Location;
+                    localPlayer.PositionSequence++;
                     localPlayer.Direction = update.Direction;
                     localPlayer.LastUpdatedUtc = DateTime.UtcNow;
                 }
@@ -429,6 +455,7 @@ namespace Zircon.Mobile.Game.World
                 entity.Name = player.Name;
                 entity.MapIndex = player.MapIndex;
                 entity.Location = player.Location;
+                entity.PositionSequence++;
                 entity.Health = player.Health;
                 entity.Mana = player.Mana;
                 entity.MaxHealth = player.MaxHealth;
@@ -545,6 +572,7 @@ namespace Zircon.Mobile.Game.World
             {
                 ZirconEntityState entity = GetOrCreate(attack.ObjectId, ZirconEntityKind.Unknown);
                 entity.Location = attack.Location;
+                entity.PositionSequence++;
                 entity.Direction = attack.Direction;
                 entity.Action = ZirconMirAction.Attack;
                 entity.ActionMagic = attack.AttackMagic;
@@ -563,6 +591,7 @@ namespace Zircon.Mobile.Game.World
             {
                 ZirconEntityState entity = GetOrCreate(magic.ObjectId, ZirconEntityKind.Unknown);
                 entity.Location = magic.Location;
+                entity.PositionSequence++;
                 entity.Direction = magic.Direction;
                 entity.Action = ZirconMirAction.Spell;
                 entity.ActionMagic = magic.MagicType;
@@ -618,6 +647,7 @@ namespace Zircon.Mobile.Game.World
             {
                 ZirconEntityState entity = GetOrCreate(move.ObjectId, ZirconEntityKind.Unknown);
                 entity.Location = move.Location;
+                entity.PositionSequence++;
                 entity.Direction = move.Direction;
                 entity.Action = ZirconMirAction.Moving;
                 entity.LastUpdatedUtc = DateTime.UtcNow;
@@ -634,6 +664,7 @@ namespace Zircon.Mobile.Game.World
             {
                 ZirconEntityState entity = GetOrCreate(turn.ObjectId, ZirconEntityKind.Unknown);
                 entity.Location = turn.Location;
+                entity.PositionSequence++;
                 entity.Direction = turn.Direction;
                 entity.Action = ZirconMirAction.Standing;
                 entity.LastUpdatedUtc = DateTime.UtcNow;
@@ -651,6 +682,7 @@ namespace Zircon.Mobile.Game.World
                 ZirconEntityState entity = GetOrCreate(objectLocation.ObjectId, ZirconEntityKind.Unknown);
                 entity.MapIndex = objectLocation.MapIndex;
                 entity.Location = objectLocation.Location;
+                entity.PositionSequence++;
                 entity.LastUpdatedUtc = DateTime.UtcNow;
                 UpdateLocalIfMatching(entity);
             }

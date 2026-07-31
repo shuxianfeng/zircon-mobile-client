@@ -136,7 +136,7 @@ namespace Zircon.Mobile.Editor
             var go = new GameObject("WorldCamera", typeof(Camera), typeof(AudioListener));
             Camera camera = go.GetComponent<Camera>();
             camera.orthographic = true;
-            camera.orthographicSize = 5.4f;
+            camera.orthographicSize = 2.4f;
             camera.backgroundColor = Ink;
             camera.transform.position = new Vector3(0, 0, -10);
             return camera;

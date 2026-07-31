@@ -10,6 +10,7 @@ namespace Zircon.Mobile.Game.Input
     {
         [SerializeField] private ZirconProtocolProbeBehaviour session;
         [SerializeField] private ZirconMapDebugRenderer mapRenderer;
+        [SerializeField] private ZirconWorldDebugRenderer worldRenderer;
         [SerializeField] private ZirconTargetCombatBehaviour combat;
         [SerializeField] private Button selectButton;
         [SerializeField] private Button attackButton;
@@ -17,7 +18,7 @@ namespace Zircon.Mobile.Game.Input
         [SerializeField] private RectTransform knob;
         [SerializeField] private float deadZonePixels = 24f;
         [SerializeField] private float knobRadiusPixels = 54f;
-        [SerializeField] private float repeatSeconds = 0.28f;
+        [SerializeField] private float repeatSeconds = 0.50f;
 
         private Vector2 origin;
         private Vector2 direction;
@@ -39,20 +40,37 @@ namespace Zircon.Mobile.Game.Input
             ResetPad();
         }
 
+        private void OnApplicationFocus(bool hasFocus)
+        {
+            if (!hasFocus)
+                ResetPad();
+        }
+
+        private void OnApplicationPause(bool paused)
+        {
+            if (paused)
+                ResetPad();
+        }
+
         private void Update()
         {
             if (!dragging || direction.sqrMagnitude < 0.01f || session == null || !session.IsInGame || Time.unscaledTime < nextMoveTime)
                 return;
 
-            nextMoveTime = Time.unscaledTime + repeatSeconds;
             byte facing = ToMirDirection(direction);
-            if (CanMoveTo(facing))
-                _ = session.SendMoveCommandAsync(facing, 1);
+            if (!CanMoveTo(facing))
+                return;
+            if (worldRenderer != null && !worldRenderer.TryPredictLocalMove(facing))
+                return;
+
+            ScheduleNextMove();
+            _ = session.SendMoveCommandAsync(facing, 1);
         }
 
         public void OnPointerDown(PointerEventData eventData)
         {
             dragging = true;
+            nextMoveTime = Time.unscaledTime;
             origin = eventData.position;
             direction = Vector2.zero;
             UpdatePad(eventData.position);
@@ -78,6 +96,12 @@ namespace Zircon.Mobile.Game.Input
                 knob.anchoredPosition = Vector2.zero;
         }
 
+        private void ScheduleNextMove()
+        {
+            float interval = Mathf.Max(0.05f, repeatSeconds);
+            nextMoveTime = Time.unscaledTime + interval;
+        }
+
         private void SelectNext() => combat?.SelectNextTarget();
         private void Attack() { if (combat != null) _ = combat.AttackSelectedTargetAsync(); }
         private void Pickup() { if (combat != null) _ = combat.PickUpNearbyAsync(); }
@@ -89,8 +113,12 @@ namespace Zircon.Mobile.Game.Input
             ZirconWorldSnapshot snapshot = session?.GetWorldSnapshot();
             if (snapshot == null || !snapshot.HasLocalPlayer)
                 return true;
+            Vector2Int originCell = new Vector2Int(snapshot.Location.X, snapshot.Location.Y);
+            if (worldRenderer != null &&
+                worldRenderer.TryGetLocalPlayerPlannedCell(out Vector2Int plannedCell))
+                originCell = plannedCell;
             Vector2Int delta = DirectionToDelta(facing);
-            return !mapRenderer.IsBlocking(snapshot.Location.X + delta.x, snapshot.Location.Y + delta.y);
+            return !mapRenderer.IsBlocking(originCell.x + delta.x, originCell.y + delta.y);
         }
 
         private static byte ToMirDirection(Vector2 value)

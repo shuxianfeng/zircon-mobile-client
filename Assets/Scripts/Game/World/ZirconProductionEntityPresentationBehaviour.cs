@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Rendering;
 using Zircon.Mobile.Core.Assets;
 using Zircon.Mobile.Core.Protocol;
 using Zircon.Mobile.Game.Entities;
@@ -25,6 +26,8 @@ namespace Zircon.Mobile.Game.World
         private readonly Dictionary<uint, MonsterPresentation> monsters = new Dictionary<uint, MonsterPresentation>();
         private readonly Dictionary<uint, long> observedActions = new Dictionary<uint, long>();
         private readonly List<TransientEffect> transientEffects = new List<TransientEffect>();
+        private readonly HashSet<uint> seenMonsterIds = new HashSet<uint>();
+        private readonly List<uint> removedMonsterIds = new List<uint>();
 
         private ZirconProtocolProbeBehaviour session;
         private ZirconWorldDebugRenderer worldRenderer;
@@ -170,7 +173,7 @@ namespace Zircon.Mobile.Game.World
 
         private void UpdateMonsters(ZirconWorldSnapshot snapshot)
         {
-            var seen = new HashSet<uint>();
+            seenMonsterIds.Clear();
             foreach (ZirconEntityState entity in snapshot.Entities)
             {
                 if (entity == null || entity.Kind != ZirconEntityKind.Monster)
@@ -179,14 +182,16 @@ namespace Zircon.Mobile.Game.World
                 if (entity.ModelIndex < 0 || entity.ModelIndex >= MonsterModels)
                     continue;
 
-                Transform marker = FindMarker(entity.ObjectId);
-                if (marker == null)
+                if (!worldRenderer.TryGetEntityRenderer(entity.ObjectId, out SpriteRenderer markerRenderer))
                     continue;
 
-                seen.Add(entity.ObjectId);
-                if (!monsters.TryGetValue(entity.ObjectId, out MonsterPresentation presentation) || presentation.Root == null)
+                seenMonsterIds.Add(entity.ObjectId);
+                if (!monsters.TryGetValue(entity.ObjectId, out MonsterPresentation presentation) ||
+                    presentation.Root == null || presentation.MarkerRenderer != markerRenderer)
                 {
-                    presentation = CreateMonsterPresentation(marker);
+                    if (presentation?.Root != null)
+                        Destroy(presentation.Root);
+                    presentation = CreateMonsterPresentation(markerRenderer);
                     monsters[entity.ObjectId] = presentation;
                 }
 
@@ -199,25 +204,27 @@ namespace Zircon.Mobile.Game.World
                 presentation.Body.flipX = entity.Direction >= 5;
                 presentation.Body.color = entity.Dead ? new Color(0.55f, 0.35f, 0.35f, 0.72f) : Color.white;
                 presentation.Shadow.enabled = !entity.Dead;
+                markerRenderer.enabled = false;
+                presentation.SortingGroup.sortingOrder = markerRenderer.sortingOrder;
             }
 
-            var remove = new List<uint>();
+            removedMonsterIds.Clear();
             foreach (KeyValuePair<uint, MonsterPresentation> pair in monsters)
-                if (!seen.Contains(pair.Key)) remove.Add(pair.Key);
-            foreach (uint id in remove)
+                if (!seenMonsterIds.Contains(pair.Key)) removedMonsterIds.Add(pair.Key);
+            foreach (uint id in removedMonsterIds)
             {
                 if (monsters[id].Root != null) Destroy(monsters[id].Root);
                 monsters.Remove(id);
             }
         }
 
-        private MonsterPresentation CreateMonsterPresentation(Transform marker)
+        private MonsterPresentation CreateMonsterPresentation(SpriteRenderer markerRenderer)
         {
-            SpriteRenderer original = marker.GetComponent<SpriteRenderer>();
-            if (original != null) original.enabled = false;
+            markerRenderer.enabled = false;
 
             var root = new GameObject("P2_ProductionMonster");
-            root.transform.SetParent(marker, false);
+            root.transform.SetParent(markerRenderer.transform, false);
+            SortingGroup sortingGroup = root.AddComponent<SortingGroup>();
             var shadowObject = new GameObject("Shadow");
             shadowObject.transform.SetParent(root.transform, false);
             var shadow = shadowObject.AddComponent<SpriteRenderer>();
@@ -232,7 +239,7 @@ namespace Zircon.Mobile.Game.World
             bodyObject.transform.SetParent(root.transform, false);
             var body = bodyObject.AddComponent<SpriteRenderer>();
             body.sharedMaterial = ZirconRuntimeSpriteMaterial.Shared;
-            return new MonsterPresentation(root, body, shadow);
+            return new MonsterPresentation(root, body, shadow, sortingGroup, markerRenderer);
         }
 
         private void UpdateActionEffects(ZirconWorldSnapshot snapshot)
@@ -267,7 +274,8 @@ namespace Zircon.Mobile.Game.World
             effectObject.transform.localScale = Vector3.one * 1.35f;
             var renderer = effectObject.AddComponent<SpriteRenderer>();
             renderer.sharedMaterial = ZirconRuntimeSpriteMaterial.Shared;
-            renderer.sortingOrder = 1000;
+            // Effects intentionally render above the world; the UI uses an overlay canvas.
+            renderer.sortingOrder = 32000;
             transientEffects.Add(new TransientEffect(effectObject, renderer, Time.time));
         }
 
@@ -366,13 +374,10 @@ namespace Zircon.Mobile.Game.World
 
         private Transform FindMarker(uint objectId)
         {
-            string suffix = "_" + objectId;
-            for (int i = 0; i < worldRenderer.transform.childCount; i++)
-            {
-                Transform child = worldRenderer.transform.GetChild(i);
-                if (child.name.EndsWith(suffix, StringComparison.Ordinal)) return child;
-            }
-            return null;
+            return worldRenderer != null &&
+                   worldRenderer.TryGetEntityRenderer(objectId, out SpriteRenderer renderer)
+                ? renderer.transform
+                : null;
         }
 
         private Sprite GetOrCreateShadowSprite()
@@ -398,11 +403,24 @@ namespace Zircon.Mobile.Game.World
 
         private sealed class MonsterPresentation
         {
-            public MonsterPresentation(GameObject root, SpriteRenderer body, SpriteRenderer shadow)
-            { Root = root; Body = body; Shadow = shadow; }
+            public MonsterPresentation(
+                GameObject root,
+                SpriteRenderer body,
+                SpriteRenderer shadow,
+                SortingGroup sortingGroup,
+                SpriteRenderer markerRenderer)
+            {
+                Root = root;
+                Body = body;
+                Shadow = shadow;
+                SortingGroup = sortingGroup;
+                MarkerRenderer = markerRenderer;
+            }
             public GameObject Root { get; }
             public SpriteRenderer Body { get; }
             public SpriteRenderer Shadow { get; }
+            public SortingGroup SortingGroup { get; }
+            public SpriteRenderer MarkerRenderer { get; }
         }
 
         private sealed class TransientEffect

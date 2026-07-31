@@ -16389,7 +16389,7 @@ MonoBehaviour:
   worldRenderer: {fileID: 1805902718}
   targetCamera: {fileID: 1029055752}
   offset: {x: 0, y: 0, z: -10}
-  smoothTime: 0.12
+  smoothTime: 0.05
 --- !u!81 &1029055751
 AudioListener:
   m_ObjectHideFlags: 0
@@ -16433,7 +16433,7 @@ Camera:
   far clip plane: 1000
   field of view: 60
   orthographic: 1
-  orthographic size: 5.4
+  orthographic size: 2.4
   m_Depth: 0
   m_CullingMask:
     serializedVersion: 2
@@ -24112,6 +24112,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   session: {fileID: 1805902717}
   mapRenderer: {fileID: 1805902720}
+  worldRenderer: {fileID: 1805902718}
   combat: {fileID: 722865345}
   selectButton: {fileID: 1980262714}
   attackButton: {fileID: 777739105}
@@ -24119,7 +24120,7 @@ MonoBehaviour:
   knob: {fileID: 191386767}
   deadZonePixels: 24
   knobRadiusPixels: 54
-  repeatSeconds: 0.28
+  repeatSeconds: 0.5
 --- !u!114 &1530878562
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -29127,7 +29128,13 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   tileScale: 0.32
+  tileHeightRatio: 0.6666667
   markerSize: 0.12
+  movementSecondsPerCell: 0.5
+  predictionTimeoutSeconds: 1.25
+  maxPredictedSteps: 2
+  movementGraceSeconds: 0.06
+  teleportCellThreshold: 3
   useGeneratedSprites: 1
   generatedTextureRoot: Generated/Textures
   spritePixelsPerUnit: 100
@@ -29164,12 +29171,13 @@ MonoBehaviour:
   generatedTextureRoot: Generated/Textures/MapData
   manifestFileName: 0.map.manifest.json
   tileScale: 0.32
+  tileHeightRatio: 0.6666667
   tileSize: {x: 0.3, y: 0.3}
   tilePixelsPerUnit: 150
   renderOnStart: 0
   maxRenderedCells: 0
   showFallbackCells: 0
-  backgroundTileVerticalScale: 1.5
+  backgroundTileVerticalScale: 1
 --- !u!4 &1805902721
 Transform:
   m_ObjectHideFlags: 0
@@ -29229,6 +29237,7 @@ MonoBehaviour:
   session: {fileID: 1805902717}
   mapRenderer: {fileID: 1805902720}
   tileScale: 0.32
+  tileHeightRatio: 0.6666667
   spritePixelsPerUnit: 150
 --- !u!114 &1805902725
 MonoBehaviour:

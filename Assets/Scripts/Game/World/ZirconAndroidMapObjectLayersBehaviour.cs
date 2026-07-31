@@ -11,6 +11,7 @@ namespace Zircon.Mobile.Game.World
         [SerializeField] private ZirconProtocolProbeBehaviour session;
         [SerializeField] private ZirconMapDebugRenderer mapRenderer;
         [SerializeField] private float tileScale = 0.32f;
+        [SerializeField] private float tileHeightRatio = 2f / 3f;
         [SerializeField] private float spritePixelsPerUnit = 150f;
 
         private readonly Dictionary<int, Sprite> sprites = new Dictionary<int, Sprite>();
@@ -101,13 +102,15 @@ namespace Zircon.Mobile.Game.World
 
             GameObject item = new GameObject((front ? "Front" : "Middle") + "_" + cell.X + "_" + cell.Y);
             item.transform.SetParent(layerRoot, false);
-            item.transform.localPosition = new Vector3(cell.X * tileScale, -(cell.Y + 1) * tileScale, 0f);
-            item.transform.localScale = new Vector3(1f, 1.5f, 1f);
+            item.transform.localPosition = new Vector3(
+                cell.X * tileScale,
+                -(cell.Y + 1) * tileScale * tileHeightRatio,
+                0f);
             SpriteRenderer renderer = item.AddComponent<SpriteRenderer>();
             renderer.sharedMaterial = ZirconRuntimeSpriteMaterial.Shared;
             renderer.sprite = sprite;
             renderer.color = Color.white;
-            renderer.sortingOrder = -cell.Y + (front ? 1 : -1);
+            renderer.sortingOrder = cell.Y * 4 + (front ? 1 : 0);
             return true;
         }
 

@@ -17,6 +17,7 @@ namespace Zircon.Mobile.UI.Login
         [Header("Runtime")]
         [SerializeField] private bool connectOnStart;
         [SerializeField] private bool showDebugOverlay;
+        [SerializeField] private bool verboseProtocolLogging;
 
         [Header("Server")]
         [SerializeField] private string host = "192.168.0.100";
@@ -57,6 +58,8 @@ namespace Zircon.Mobile.UI.Login
         private bool handlingNetworkSwitch;
         private bool resumeCharacterAfterNetworkSwitch;
         private TaskCompletionSource<bool> firstServerPacket;
+        private ZirconWorldSnapshot frameSnapshot;
+        private int frameSnapshotFrame = -1;
 
         public event Action<IReadOnlyList<ZirconCharacterSelectInfo>> CharactersChanged;
         public event Action<ZirconConnectionState> ConnectionStateChanged;
@@ -67,6 +70,14 @@ namespace Zircon.Mobile.UI.Login
         public void ConfigureItemStackSizeResolver(Func<int, int> resolver)
         {
             worldState.SetItemStackSizeResolver(resolver);
+        }
+
+        private void Awake()
+        {
+            // Unity defaults mobile players to roughly 30 FPS when no target is set.
+            // A stable 60 FPS gives each half-second map step enough visual samples.
+            Application.SetStackTraceLogType(LogType.Log, StackTraceLogType.None);
+            Application.targetFrameRate = 60;
         }
 
         private async void Start()
@@ -87,6 +98,8 @@ namespace Zircon.Mobile.UI.Login
                 }};
 
             worldState.Reset();
+            frameSnapshot = null;
+            frameSnapshotFrame = -1;
             worldRenderer?.Clear();
             Exception lastError = null;
             foreach (ZirconNetworkEndpoint endpoint in endpoints)
@@ -104,7 +117,8 @@ namespace Zircon.Mobile.UI.Login
                 };
 
                 ZirconNetworkClient candidate = new ZirconNetworkClient(config);
-                candidate.Log += AppendLog;
+                if (verboseProtocolLogging || showDebugOverlay)
+                    candidate.Log += AppendVerboseLog;
                 candidate.StateChanged += state =>
                 {
                     AppendLog($"state changed: {state}");
@@ -304,14 +318,14 @@ namespace Zircon.Mobile.UI.Login
                 }
 
                 if (worldState.ApplyPacket(e.Frame, out string worldSummary))
-                    AppendLog(worldSummary);
+                    AppendVerboseLog(worldSummary);
             }
             else
             {
                 if (worldState.ApplyPacket(e.Frame, out string worldSummary))
-                    AppendLog(worldSummary);
-                else
-                    AppendLog(ZirconPacketSummary.Describe(e.Frame));
+                    AppendVerboseLog(worldSummary);
+                else if (verboseProtocolLogging || showDebugOverlay)
+                    AppendVerboseLog(ZirconPacketSummary.Describe(e.Frame));
             }
         }
 
@@ -338,7 +352,13 @@ namespace Zircon.Mobile.UI.Login
 
         public ZirconWorldSnapshot GetWorldSnapshot()
         {
-            return worldState.GetSnapshot();
+            int frame = Time.frameCount;
+            if (frameSnapshot != null && frameSnapshotFrame == frame)
+                return frameSnapshot;
+
+            frameSnapshot = worldState.GetSnapshot();
+            frameSnapshotFrame = frame;
+            return frameSnapshot;
         }
 
         public async Task SendTurnCommandAsync(byte direction)
@@ -349,7 +369,7 @@ namespace Zircon.Mobile.UI.Login
             try
             {
                 await client.SendTurnAsync(direction, cts.Token);
-                AppendLog($"sent turn direction={direction}");
+                AppendVerboseLog($"sent turn direction={direction}");
             }
             catch (Exception ex)
             {
@@ -366,7 +386,7 @@ namespace Zircon.Mobile.UI.Login
             try
             {
                 await client.SendMoveAsync(direction, clampedDistance, cts.Token);
-                AppendLog($"sent move direction={direction} distance={clampedDistance}");
+                AppendVerboseLog($"sent move direction={direction} distance={clampedDistance}");
             }
             catch (Exception ex)
             {
@@ -704,13 +724,24 @@ namespace Zircon.Mobile.UI.Login
             pendingLogs.Enqueue(message);
         }
 
+        private void AppendVerboseLog(string message)
+        {
+            if (verboseProtocolLogging || showDebugOverlay)
+                pendingLogs.Enqueue(message);
+        }
+
         private void FlushLogs()
         {
             while (pendingLogs.TryDequeue(out string message))
             {
-                logBuilder.Append('[').Append(DateTime.Now.ToString("HH:mm:ss")).Append("] ").AppendLine(message);
+                if (showDebugOverlay)
+                    logBuilder.Append('[').Append(DateTime.Now.ToString("HH:mm:ss")).Append("] ").AppendLine(message);
                 Debug.Log(message);
             }
+
+            const int maxOverlayLogCharacters = 32768;
+            if (logBuilder.Length > maxOverlayLogCharacters)
+                logBuilder.Remove(0, logBuilder.Length - maxOverlayLogCharacters);
         }
 
         private void Update()
@@ -719,7 +750,7 @@ namespace Zircon.Mobile.UI.Login
                 action();
 
             FlushLogs();
-            worldRenderer?.Render(worldState.GetSnapshot());
+            worldRenderer?.Render(GetWorldSnapshot());
             PollNetworkTransport();
         }
 

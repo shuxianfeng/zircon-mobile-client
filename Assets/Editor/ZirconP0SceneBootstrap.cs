@@ -112,7 +112,7 @@ namespace Zircon.Mobile.Editor
             Set(combat, "protocolProbe", session); Set(combat, "worldRenderer", world); Set(combat, "worldCamera", camera);
 
             ZirconMobileGameplayControlsBehaviour controls = pad.AddComponent<ZirconMobileGameplayControlsBehaviour>();
-            Set(controls, "session", session); Set(controls, "mapRenderer", map); Set(controls, "combat", combat);
+            Set(controls, "session", session); Set(controls, "mapRenderer", map); Set(controls, "worldRenderer", world); Set(controls, "combat", combat);
             Set(controls, "selectButton", select); Set(controls, "attackButton", attack); Set(controls, "pickupButton", pickup); Set(controls, "knob", knob);
 
             hotbar = new ZirconMobileSkillButtonBehaviour[4];

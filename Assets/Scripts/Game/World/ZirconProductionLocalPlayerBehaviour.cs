@@ -26,6 +26,8 @@ namespace Zircon.Mobile.Game.World
         private readonly Dictionary<int, LayerFrame> weapons = new Dictionary<int, LayerFrame>();
 
         private Transform marker;
+        private SpriteRenderer markerRenderer;
+        private uint markerObjectId;
         private GameObject composition;
         private SpriteRenderer body;
         private SpriteRenderer overlay;
@@ -38,9 +40,11 @@ namespace Zircon.Mobile.Game.World
         private bool ready;
         private bool incompatible;
         private long observedActionSequence = long.MinValue;
-        private ZirconMirAction observedAction = (ZirconMirAction)byte.MaxValue;
-        private float actionStartedAt;
-        private string loadedAppearanceSignature;
+        private ZirconMirAction observedServerAction = (ZirconMirAction)byte.MaxValue;
+        private ZirconMirAction observedVisualAction = (ZirconMirAction)byte.MaxValue;
+        private float serverActionStartedAt;
+        private float visualActionStartedAt;
+        private ZirconPlayerAppearanceCaptureBehaviour.Appearance? loadedAppearance;
 
         private sealed class LayerFrame
         {
@@ -72,8 +76,10 @@ namespace Zircon.Mobile.Game.World
 
             if (ZirconPlayerAppearanceCaptureBehaviour.Current.HasValue)
             {
-                string signature = AppearanceSignature(ZirconPlayerAppearanceCaptureBehaviour.Current.Value);
-                if (ready && !string.Equals(signature, loadedAppearanceSignature, StringComparison.Ordinal))
+                ZirconPlayerAppearanceCaptureBehaviour.Appearance appearance =
+                    ZirconPlayerAppearanceCaptureBehaviour.Current.Value;
+                if (ready && loadedAppearance.HasValue &&
+                    !SameAppearance(appearance, loadedAppearance.Value))
                     ResetLoadedAppearance();
                 if (!loading && !ready && !incompatible)
                     StartCoroutine(LoadSprites());
@@ -83,23 +89,44 @@ namespace Zircon.Mobile.Game.World
                 return;
 
             uint id = snapshot.LocalPlayer.ObjectId;
-            if (marker == null || !marker.name.EndsWith("_" + id, StringComparison.Ordinal))
-                marker = FindMarker(id);
+            if (marker == null || markerObjectId != id)
+            {
+                marker = null;
+                markerRenderer = null;
+                if (worldRenderer != null &&
+                    worldRenderer.TryGetEntityRenderer(id, out SpriteRenderer foundRenderer))
+                {
+                    markerRenderer = foundRenderer;
+                    marker = foundRenderer.transform;
+                    markerObjectId = id;
+                }
+            }
             if (marker == null)
                 return;
 
             EnsureComposition();
             if (snapshot.LocalPlayer.ActionSequence != observedActionSequence ||
-                snapshot.LocalPlayer.Action != observedAction)
+                snapshot.LocalPlayer.Action != observedServerAction)
             {
                 observedActionSequence = snapshot.LocalPlayer.ActionSequence;
-                observedAction = snapshot.LocalPlayer.Action;
-                actionStartedAt = Time.time;
+                observedServerAction = snapshot.LocalPlayer.Action;
+                serverActionStartedAt = Time.time;
             }
 
-            int direction = Mathf.Clamp(snapshot.LocalPlayer.Direction, (byte)0, (byte)(DirectionCount - 1));
-            AnimationSpec animation = GetAnimation(snapshot.LocalPlayer.Action);
-            int frame = Mathf.FloorToInt(Mathf.Max(0f, Time.time - actionStartedAt) * animation.Fps);
+            ZirconMirAction visualAction = ResolveVisualAction(
+                snapshot.LocalPlayer.Action, snapshot.LocalPlayer.Dead, id);
+            if (visualAction != observedVisualAction)
+            {
+                observedVisualAction = visualAction;
+                visualActionStartedAt = Time.time;
+            }
+            byte visualDirection = snapshot.LocalPlayer.Direction;
+            if (visualAction == ZirconMirAction.Moving && worldRenderer != null &&
+                worldRenderer.TryGetVisualDirection(id, out byte predictedDirection))
+                visualDirection = predictedDirection;
+            int direction = Mathf.Clamp(visualDirection, (byte)0, (byte)(DirectionCount - 1));
+            AnimationSpec animation = GetAnimation(visualAction);
+            int frame = Mathf.FloorToInt(Mathf.Max(0f, Time.time - visualActionStartedAt) * animation.Fps);
             frame = animation.Loop ? frame % animation.Count : Mathf.Min(frame, animation.Count - 1);
             int drawFrame = animation.Start + direction * 10 + frame;
             if (!bodies.ContainsKey(drawFrame))
@@ -110,9 +137,52 @@ namespace Zircon.Mobile.Game.World
             }
             Apply(drawFrame, direction);
 
-            SpriteRenderer markerRenderer = marker.GetComponent<SpriteRenderer>();
             if (sortingGroup != null && markerRenderer != null)
                 sortingGroup.sortingOrder = markerRenderer.sortingOrder;
+        }
+
+        private ZirconMirAction ResolveVisualAction(
+            ZirconMirAction serverAction,
+            bool dead,
+            uint objectId)
+        {
+            float serverElapsed = Mathf.Max(0f, Time.time - serverActionStartedAt);
+            if (dead || serverAction == ZirconMirAction.Die || serverAction == ZirconMirAction.Dead)
+            {
+                AnimationSpec dying = GetAnimation(ZirconMirAction.Die);
+                if (serverAction == ZirconMirAction.Die &&
+                    serverElapsed < dying.Count / dying.Fps)
+                    return ZirconMirAction.Die;
+                return ZirconMirAction.Dead;
+            }
+
+            if (IsOneShot(serverAction))
+            {
+                AnimationSpec action = GetAnimation(serverAction);
+                if (serverElapsed < action.Count / action.Fps)
+                    return serverAction;
+            }
+
+            bool moving = worldRenderer != null
+                ? worldRenderer.IsObjectMoving(objectId)
+                : serverAction == ZirconMirAction.Moving;
+            return moving ? ZirconMirAction.Moving : ZirconMirAction.Standing;
+        }
+
+        private static bool IsOneShot(ZirconMirAction action)
+        {
+            switch (action)
+            {
+                case ZirconMirAction.Pushed:
+                case ZirconMirAction.Attack:
+                case ZirconMirAction.RangeAttack:
+                case ZirconMirAction.Spell:
+                case ZirconMirAction.Harvest:
+                case ZirconMirAction.Mining:
+                    return true;
+                default:
+                    return false;
+            }
         }
 
         private IEnumerator LoadSprites()
@@ -198,7 +268,7 @@ namespace Zircon.Mobile.Game.World
 
             ready = bodies.ContainsKey(0) && (!showHair || hairs.ContainsKey(0));
             incompatible = !ready;
-            loadedAppearanceSignature = AppearanceSignature(appearance);
+            loadedAppearance = appearance;
             loading = false;
             Debug.Log("P2-B local player appearance ready: loadedLayers=" + loaded +
                       " drawFrames=" + drawFrames.Length +
@@ -292,7 +362,7 @@ namespace Zircon.Mobile.Game.World
             composition = new GameObject("本地角色正式外观");
             composition.transform.SetParent(marker, false);
             sortingGroup = composition.AddComponent<SortingGroup>();
-            SpriteRenderer old = marker.GetComponent<SpriteRenderer>();
+            SpriteRenderer old = markerRenderer;
             sortingGroup.sortingOrder = old != null ? old.sortingOrder : 0;
             shadow = Add("动态阴影", -2);
             shadow.sprite = GetOrCreateShadowSprite();
@@ -398,20 +468,6 @@ namespace Zircon.Mobile.Game.World
                 values.Add(start + direction * 10 + frame);
         }
 
-        private Transform FindMarker(uint id)
-        {
-            if (worldRenderer == null)
-                return null;
-            string suffix = "_" + id;
-            for (int i = 0; i < worldRenderer.transform.childCount; i++)
-            {
-                Transform child = worldRenderer.transform.GetChild(i);
-                if (child.name.EndsWith(suffix, StringComparison.Ordinal))
-                    return child;
-            }
-            return null;
-        }
-
         private Sprite GetOrCreateShadowSprite()
         {
             if (shadowSprite != null)
@@ -442,13 +498,15 @@ namespace Zircon.Mobile.Game.World
                 Destroy(composition);
             composition = null;
             marker = null;
+            markerRenderer = null;
+            markerObjectId = 0;
             ClearFrames(bodies);
             ClearFrames(overlays);
             ClearFrames(hairs);
             ClearFrames(weapons);
             ready = false;
             incompatible = false;
-            loadedAppearanceSignature = null;
+            loadedAppearance = null;
         }
 
         private static void ClearFrames(Dictionary<int, LayerFrame> frames)
@@ -466,10 +524,17 @@ namespace Zircon.Mobile.Game.World
                 Destroy(shadowSprite);
         }
 
-        private static string AppearanceSignature(ZirconPlayerAppearanceCaptureBehaviour.Appearance value)
+        private static bool SameAppearance(
+            ZirconPlayerAppearanceCaptureBehaviour.Appearance left,
+            ZirconPlayerAppearanceCaptureBehaviour.Appearance right)
         {
-            return value.CharacterClass + ":" + value.Gender + ":" + value.HairType + ":" +
-                   value.Weapon + ":" + value.Armour + ":" + value.Shield + ":" + value.Helmet;
+            return left.CharacterClass == right.CharacterClass &&
+                   left.Gender == right.Gender &&
+                   left.HairType == right.HairType &&
+                   left.Weapon == right.Weapon &&
+                   left.Armour == right.Armour &&
+                   left.Shield == right.Shield &&
+                   left.Helmet == right.Helmet;
         }
 
         private static Color32 FromArgb(int value)

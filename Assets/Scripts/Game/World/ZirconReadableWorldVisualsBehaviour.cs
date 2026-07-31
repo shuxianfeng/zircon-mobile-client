@@ -22,6 +22,9 @@ namespace Zircon.Mobile.Game.World
         private ZirconMapManifest cleanedManifest;
         private float nextStatusRefresh;
         private ZirconProductionEntityPresentationBehaviour productionPresentation;
+        private bool spriteSequencesStabilized;
+        private readonly Dictionary<uint, ZirconEntityKind> entityKinds =
+            new Dictionary<uint, ZirconEntityKind>();
 
         private void OnEnable()
         {
@@ -67,10 +70,10 @@ namespace Zircon.Mobile.Game.World
                     continue;
                 }
 
-                // A PC background tile is 96x64 pixels and represents a 2x2
-                // cell block. The prototype world grid is square, so fill its
-                // vertical cell span to avoid visible seams.
-                child.localScale = new Vector3(1f, 1.5f, 1f);
+                // The world renderer already uses the original 48x32 cell
+                // aspect ratio. Stretching these 96x64 tiles again tears the
+                // ground apart and shifts every object placed on top of it.
+                child.localScale = Vector3.one;
                 realTiles++;
             }
 
@@ -82,50 +85,52 @@ namespace Zircon.Mobile.Game.World
             if (worldRenderer == null)
                 return;
 
-            // The exported files are sparse validation samples, not a complete
-            // action sequence. Keep one stable, front-facing frame instead of
-            // cycling unrelated indices and producing a ghosting effect.
-            FieldInfo dictionaryField = typeof(ZirconWorldDebugRenderer).GetField("spritesByKind", BindingFlags.Instance | BindingFlags.NonPublic);
-            if (dictionaryField?.GetValue(worldRenderer) is IDictionary dictionary)
+            if (!spriteSequencesStabilized)
             {
-                foreach (DictionaryEntry entry in dictionary)
-                    if (entry.Key is ZirconEntityKind kind &&
-                        kind != ZirconEntityKind.Monster &&
-                        kind != ZirconEntityKind.Spell &&
-                        entry.Value is IList frames)
-                        while (frames.Count > 1)
-                            frames.RemoveAt(frames.Count - 1);
+                // The exported fallback files are sparse validation samples,
+                // not complete action sequences. Stabilize them once after the
+                // world renderer has performed its first load.
+                FieldInfo dictionaryField = typeof(ZirconWorldDebugRenderer).GetField(
+                    "spritesByKind", BindingFlags.Instance | BindingFlags.NonPublic);
+                if (dictionaryField?.GetValue(worldRenderer) is IDictionary dictionary)
+                {
+                    foreach (DictionaryEntry entry in dictionary)
+                        if (entry.Key is ZirconEntityKind kind &&
+                            kind != ZirconEntityKind.Monster &&
+                            kind != ZirconEntityKind.Spell &&
+                            entry.Value is IList frames)
+                            while (frames.Count > 1)
+                                frames.RemoveAt(frames.Count - 1);
+                }
+                spriteSequencesStabilized = true;
             }
 
             ZirconWorldSnapshot snapshot = session?.GetWorldSnapshot();
             if (snapshot == null)
                 return;
 
-            var kinds = new Dictionary<uint, ZirconEntityKind>();
+            entityKinds.Clear();
             foreach (ZirconEntityState entity in snapshot.Entities)
-                kinds[entity.ObjectId] = entity.Kind;
+                entityKinds[entity.ObjectId] = entity.Kind;
 
-            for (int i = 0; i < worldRenderer.transform.childCount; i++)
+            Material runtimeMaterial = ZirconRuntimeSpriteMaterial.Shared;
+            foreach (KeyValuePair<uint, ZirconEntityKind> pair in entityKinds)
             {
-                Transform child = worldRenderer.transform.GetChild(i);
-                SpriteRenderer spriteRenderer = child.GetComponent<SpriteRenderer>();
-                Material runtimeMaterial = ZirconRuntimeSpriteMaterial.Shared;
+                if (!worldRenderer.TryGetEntityRenderer(pair.Key, out SpriteRenderer spriteRenderer))
+                    continue;
                 if (spriteRenderer != null && runtimeMaterial != null && spriteRenderer.sharedMaterial != runtimeMaterial)
                     spriteRenderer.sharedMaterial = runtimeMaterial;
-                uint objectId = ParseObjectId(child.name);
-                if (!kinds.TryGetValue(objectId, out ZirconEntityKind kind))
-                    continue;
 
                 float scale = 1f;
-                if (snapshot.LocalPlayer != null && objectId == snapshot.LocalPlayer.ObjectId)
+                if (snapshot.LocalPlayer != null && pair.Key == snapshot.LocalPlayer.ObjectId)
                     scale = 1f;
-                else if (kind == ZirconEntityKind.Player)
+                else if (pair.Value == ZirconEntityKind.Player)
                     scale = 1.55f;
-                else if (kind == ZirconEntityKind.Npc)
+                else if (pair.Value == ZirconEntityKind.Npc)
                     scale = 1.5f;
-                else if (kind == ZirconEntityKind.Monster)
+                else if (pair.Value == ZirconEntityKind.Monster)
                     scale = 0.9f;
-                child.localScale = Vector3.one * scale;
+                spriteRenderer.transform.localScale = Vector3.one * scale;
             }
         }
 
@@ -173,12 +178,5 @@ namespace Zircon.Mobile.Game.World
             statusText.text = mapName + "   坐标：" + snapshot.Location.X + "," + snapshot.Location.Y + "   " + npc;
         }
 
-        private static uint ParseObjectId(string objectName)
-        {
-            if (string.IsNullOrEmpty(objectName))
-                return 0;
-            int separator = objectName.LastIndexOf('_');
-            return separator >= 0 && uint.TryParse(objectName.Substring(separator + 1), out uint value) ? value : 0;
-        }
     }
 }

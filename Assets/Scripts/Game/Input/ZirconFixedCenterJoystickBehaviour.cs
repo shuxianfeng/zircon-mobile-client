@@ -14,11 +14,12 @@ namespace Zircon.Mobile.Game.Input
     {
         [SerializeField] private ZirconProtocolProbeBehaviour session;
         [SerializeField] private ZirconMapDebugRenderer mapRenderer;
+        [SerializeField] private ZirconWorldDebugRenderer worldRenderer;
         [SerializeField] private RectTransform pad;
         [SerializeField] private RectTransform knob;
         [SerializeField] private float deadZonePixels = 18f;
         [SerializeField] private float knobRadiusPixels = 54f;
-        [SerializeField] private float repeatSeconds = 0.30f;
+        [SerializeField] private float repeatSeconds = 0.50f;
 
         private Vector2 direction;
         private bool held;
@@ -39,10 +40,31 @@ namespace Zircon.Mobile.Game.Input
 
         public void OnPointerUp(PointerEventData eventData)
         {
+            ResetPad();
+        }
+
+        private void OnDisable()
+        {
+            ResetPad();
+        }
+
+        private void OnApplicationFocus(bool hasFocus)
+        {
+            if (!hasFocus)
+                ResetPad();
+        }
+
+        private void OnApplicationPause(bool paused)
+        {
+            if (paused)
+                ResetPad();
+        }
+
+        private void ResetPad()
+        {
             held = false;
             direction = Vector2.zero;
             if (knob != null) knob.anchoredPosition = Vector2.zero;
-            Debug.Log("P0 joystick released");
         }
 
         private void Update()
@@ -64,21 +86,32 @@ namespace Zircon.Mobile.Game.Input
         {
             if (direction.sqrMagnitude < 0.01f || session == null || !session.IsInGame || Time.unscaledTime < nextMove)
                 return;
-            nextMove = Time.unscaledTime + repeatSeconds;
             byte facing = ToMirDirection(direction);
             ZirconWorldSnapshot snapshot = session.GetWorldSnapshot();
             if (snapshot == null || !snapshot.HasLocalPlayer)
                 return;
             Vector2Int delta = DirectionToDelta(facing);
-            int x = snapshot.Location.X + delta.x;
-            int y = snapshot.Location.Y + delta.y;
+            Vector2Int origin = new Vector2Int(snapshot.Location.X, snapshot.Location.Y);
+            if (worldRenderer != null &&
+                worldRenderer.TryGetLocalPlayerPlannedCell(out Vector2Int plannedCell))
+                origin = plannedCell;
+            int x = origin.x + delta.x;
+            int y = origin.y + delta.y;
             if (mapRenderer != null && mapRenderer.IsBlocking(x, y))
             {
-                Debug.Log($"P0 joystick blocked direction={facing} target={x},{y}");
+                nextMove = Time.unscaledTime + Mathf.Max(0.05f, repeatSeconds);
                 return;
             }
-            Debug.Log($"P0 joystick move direction={facing} from={snapshot.Location.X},{snapshot.Location.Y} to={x},{y}");
+            if (worldRenderer != null && !worldRenderer.TryPredictLocalMove(facing))
+                return;
+            ScheduleNextMove();
             _ = session.SendMoveCommandAsync(facing, 1);
+        }
+
+        private void ScheduleNextMove()
+        {
+            float interval = Mathf.Max(0.05f, repeatSeconds);
+            nextMove = Time.unscaledTime + interval;
         }
 
         private static byte ToMirDirection(Vector2 value)

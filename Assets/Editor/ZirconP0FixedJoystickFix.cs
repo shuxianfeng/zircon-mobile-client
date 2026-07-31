@@ -18,7 +18,8 @@ namespace Zircon.Mobile.Editor
             Transform knob = padObject == null ? null : padObject.transform.Find("Knob");
             ZirconProtocolProbeBehaviour session = FindSceneObject<ZirconProtocolProbeBehaviour>();
             ZirconMapDebugRenderer map = FindSceneObject<ZirconMapDebugRenderer>();
-            if (padObject == null || knob == null || session == null || map == null)
+            ZirconWorldDebugRenderer world = FindSceneObject<ZirconWorldDebugRenderer>();
+            if (padObject == null || knob == null || session == null || map == null || world == null)
                 throw new InvalidOperationException("Fixed joystick dependencies are incomplete.");
 
             // The legacy component still owns the pickup button. Disable only
@@ -36,6 +37,7 @@ namespace Zircon.Mobile.Editor
             var serialized = new SerializedObject(fixedJoystick);
             serialized.FindProperty("session").objectReferenceValue = session;
             serialized.FindProperty("mapRenderer").objectReferenceValue = map;
+            serialized.FindProperty("worldRenderer").objectReferenceValue = world;
             serialized.FindProperty("pad").objectReferenceValue = padObject.GetComponent<RectTransform>();
             serialized.FindProperty("knob").objectReferenceValue = knob.GetComponent<RectTransform>();
             serialized.ApplyModifiedPropertiesWithoutUndo();

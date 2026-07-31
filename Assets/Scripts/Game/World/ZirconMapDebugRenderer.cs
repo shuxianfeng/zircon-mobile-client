@@ -10,17 +10,29 @@ namespace Zircon.Mobile.Game.World
         [SerializeField] private string generatedTextureRoot = "Generated/Textures/MapData";
         [SerializeField] private string manifestFileName = "0.map.manifest.json";
         [SerializeField] private float tileScale = 0.32f;
+        [SerializeField] private float tileHeightRatio = 2f / 3f;
         [SerializeField] private Vector2 tileSize = new Vector2(0.3f, 0.3f);
         [SerializeField] private float tilePixelsPerUnit = 150f;
         [SerializeField] private bool renderOnStart = true;
         [SerializeField] private int maxRenderedCells = 4096;
         [SerializeField] private bool showFallbackCells;
-        [SerializeField] private float backgroundTileVerticalScale = 1.5f;
+        [SerializeField] private float backgroundTileVerticalScale = 1f;
 
-        private readonly List<SpriteRenderer> cells = new List<SpriteRenderer>();
-        private readonly Dictionary<int, ZirconMapCellManifest> cellsByLocation = new Dictionary<int, ZirconMapCellManifest>();
+        private readonly List<MapCellVisual> cells = new List<MapCellVisual>();
+        private readonly Dictionary<long, ZirconMapCellManifest> cellsByLocation = new Dictionary<long, ZirconMapCellManifest>();
+        private readonly Dictionary<long, MapCellVisual> cellVisualsByLocation = new Dictionary<long, MapCellVisual>();
         private readonly Dictionary<string, Sprite> tileSprites = new Dictionary<string, Sprite>();
+        private readonly HashSet<Texture2D> ownedTileTextures = new HashSet<Texture2D>();
         private Sprite cellSprite;
+        private bool hasVisibleCellBounds;
+        private RectInt visibleCellBounds;
+
+        private sealed class MapCellVisual
+        {
+            public SpriteRenderer Renderer;
+            public int X;
+            public int Y;
+        }
 
         public ZirconMapManifest Manifest { get; private set; }
 
@@ -55,6 +67,8 @@ namespace Zircon.Mobile.Game.World
             int count = maxRenderedCells > 0
                 ? Mathf.Min(maxRenderedCells, Manifest.SampleCells.Count)
                 : Manifest.SampleCells.Count;
+            if (tileSprites.Count == 0)
+                BuildTileAtlas(Manifest.SampleCells, count);
             for (int i = 0; i < count; i++)
             {
                 ZirconMapCellManifest cell = Manifest.SampleCells[i];
@@ -65,14 +79,15 @@ namespace Zircon.Mobile.Game.World
 
         public void Clear()
         {
-            foreach (SpriteRenderer renderer in cells)
+            foreach (MapCellVisual visual in cells)
             {
-                if (renderer != null)
-                    Destroy(renderer.gameObject);
+                if (visual?.Renderer != null)
+                    Destroy(visual.Renderer.gameObject);
             }
 
             cells.Clear();
             cellsByLocation.Clear();
+            cellVisualsByLocation.Clear();
         }
 
         public bool TryGetCell(int x, int y, out ZirconMapCellManifest cell)
@@ -85,6 +100,65 @@ namespace Zircon.Mobile.Game.World
             return TryGetCell(x, y, out ZirconMapCellManifest cell) && cell.Blocking;
         }
 
+        public void SetVisibleCellBounds(RectInt bounds)
+        {
+            bool hadVisibleCellBounds = hasVisibleCellBounds;
+            RectInt previousBounds = visibleCellBounds;
+            hasVisibleCellBounds = true;
+            visibleCellBounds = bounds;
+
+            if (!hadVisibleCellBounds)
+            {
+                foreach (MapCellVisual visual in cells)
+                    SetCellVisibility(visual, IsInsideVisibleBounds(visual.X, visual.Y));
+                return;
+            }
+
+            if (HaveSameBounds(previousBounds, bounds))
+                return;
+
+            // Only touch cells in the old/new edge strips. Scanning every renderer
+            // each time the player crosses a grid cell creates a visible CPU spike.
+            SetCellsInDifference(previousBounds, bounds, false);
+            SetCellsInDifference(bounds, previousBounds, true);
+        }
+
+        private void SetCellsInDifference(RectInt candidate, RectInt overlap, bool visible)
+        {
+            for (int x = candidate.xMin; x < candidate.xMax; x++)
+            {
+                if (x < overlap.xMin || x >= overlap.xMax)
+                {
+                    SetCellRange(x, candidate.yMin, candidate.yMax, visible);
+                    continue;
+                }
+
+                SetCellRange(x, candidate.yMin, Mathf.Min(candidate.yMax, overlap.yMin), visible);
+                SetCellRange(x, Mathf.Max(candidate.yMin, overlap.yMax), candidate.yMax, visible);
+            }
+        }
+
+        private void SetCellRange(int x, int yMin, int yMax, bool visible)
+        {
+            for (int y = yMin; y < yMax; y++)
+            {
+                if (cellVisualsByLocation.TryGetValue(GetKey(x, y), out MapCellVisual visual))
+                    SetCellVisibility(visual, visible);
+            }
+        }
+
+        private static void SetCellVisibility(MapCellVisual visual, bool visible)
+        {
+            if (visual?.Renderer != null && visual.Renderer.enabled != visible)
+                visual.Renderer.enabled = visible;
+        }
+
+        private static bool HaveSameBounds(RectInt left, RectInt right)
+        {
+            return left.xMin == right.xMin && left.xMax == right.xMax &&
+                   left.yMin == right.yMin && left.yMax == right.yMax;
+        }
+
         private void CreateCell(ZirconMapCellManifest cell)
         {
             Sprite tileSprite = GetBackTileSprite(cell);
@@ -93,7 +167,10 @@ namespace Zircon.Mobile.Game.World
 
             var go = new GameObject($"ZirconMapCell_{cell.X}_{cell.Y}");
             go.transform.SetParent(transform, false);
-            go.transform.localPosition = new Vector3(cell.X * tileScale, -cell.Y * tileScale, 0.1f);
+            go.transform.localPosition = new Vector3(
+                cell.X * tileScale,
+                -cell.Y * tileScale * tileHeightRatio,
+                0.1f);
 
             SpriteRenderer renderer = go.AddComponent<SpriteRenderer>();
             renderer.sprite = tileSprite != null ? tileSprite : cellSprite;
@@ -102,7 +179,17 @@ namespace Zircon.Mobile.Game.World
                 ? new Vector3(1f, backgroundTileVerticalScale, 1f)
                 : new Vector3(tileSize.x, tileSize.y, 1f);
             renderer.sortingOrder = -10000 - cell.Y;
-            cells.Add(renderer);
+            renderer.enabled = IsInsideVisibleBounds(cell.X, cell.Y);
+            var visual = new MapCellVisual { Renderer = renderer, X = cell.X, Y = cell.Y };
+            cells.Add(visual);
+            cellVisualsByLocation[GetKey(cell.X, cell.Y)] = visual;
+        }
+
+        private bool IsInsideVisibleBounds(int x, int y)
+        {
+            return !hasVisibleCellBounds ||
+                   (x >= visibleCellBounds.xMin && x < visibleCellBounds.xMax &&
+                    y >= visibleCellBounds.yMin && y < visibleCellBounds.yMax);
         }
 
         public void ClearTileCache()
@@ -111,12 +198,135 @@ namespace Zircon.Mobile.Game.World
             {
                 if (sprite == null)
                     continue;
-                Texture2D texture = sprite.texture;
                 Destroy(sprite);
-                if (texture != null)
-                    Destroy(texture);
             }
             tileSprites.Clear();
+            foreach (Texture2D texture in ownedTileTextures)
+                if (texture != null)
+                    Destroy(texture);
+            ownedTileTextures.Clear();
+        }
+
+        private void BuildTileAtlas(IReadOnlyList<ZirconMapCellManifest> mapCells, int count)
+        {
+            var keys = new List<string>();
+            var textures = new List<Texture2D>();
+            var seen = new HashSet<string>();
+            string root = Path.Combine(Application.dataPath,
+                generatedTextureRoot.Replace('/', Path.DirectorySeparatorChar));
+            for (int i = 0; i < count; i++)
+            {
+                ZirconMapCellManifest cell = mapCells[i];
+                if (!TryGetMapLibraryFolder(cell.BackFile, out string folder) || cell.BackImage <= 0)
+                    continue;
+                string key = $"{folder}:{cell.BackImage}";
+                if (!seen.Add(key))
+                    continue;
+                string file = Path.Combine(root, folder,
+                    $"{folder}_{cell.BackImage:D5}_image.png");
+                Texture2D texture = LoadTexture(file);
+                if (texture == null)
+                    continue;
+                keys.Add(key);
+                textures.Add(texture);
+            }
+
+            if (textures.Count == 0)
+                return;
+            if (!TryPack(textures, 2048, out Texture2D atlas, out Rect[] rects) &&
+                !TryPack(textures, 4096, out atlas, out rects))
+            {
+                for (int i = 0; i < textures.Count; i++)
+                {
+                    Texture2D texture = textures[i];
+                    ownedTileTextures.Add(texture);
+                    tileSprites[keys[i]] = CreateTileSprite(texture,
+                        new Rect(0f, 0f, texture.width, texture.height), keys[i]);
+                }
+                return;
+            }
+
+            atlas.name = "ZirconMapFloorAtlas";
+            atlas.filterMode = FilterMode.Point;
+            atlas.wrapMode = TextureWrapMode.Clamp;
+            ownedTileTextures.Add(atlas);
+            for (int i = 0; i < textures.Count; i++)
+            {
+                Rect packed = rects[i];
+                Rect pixels = new Rect(
+                    Mathf.Round(packed.x * atlas.width),
+                    Mathf.Round(packed.y * atlas.height),
+                    textures[i].width,
+                    textures[i].height);
+                tileSprites[keys[i]] = CreateTileSprite(atlas, pixels, keys[i]);
+                Destroy(textures[i]);
+            }
+            atlas.Apply(false, true);
+        }
+
+        private bool TryPack(
+            List<Texture2D> textures,
+            int maximumSize,
+            out Texture2D atlas,
+            out Rect[] rects)
+        {
+            atlas = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+            try
+            {
+                rects = atlas.PackTextures(textures.ToArray(), 4, maximumSize, false);
+            }
+            catch (System.Exception exception)
+            {
+                Debug.LogWarning("Map floor atlas packing failed at " + maximumSize +
+                                 "px; falling back safely. " + exception.Message, this);
+                Destroy(atlas);
+                atlas = null;
+                rects = null;
+                return false;
+            }
+            if (rects == null || rects.Length != textures.Count)
+            {
+                Destroy(atlas);
+                atlas = null;
+                return false;
+            }
+
+            for (int i = 0; i < rects.Length; i++)
+            {
+                int width = Mathf.RoundToInt(rects[i].width * atlas.width);
+                int height = Mathf.RoundToInt(rects[i].height * atlas.height);
+                if (width == textures[i].width && height == textures[i].height)
+                    continue;
+                Destroy(atlas);
+                atlas = null;
+                rects = null;
+                return false;
+            }
+            return true;
+        }
+
+        private Texture2D LoadTexture(string file)
+        {
+            if (!File.Exists(file))
+                return null;
+            byte[] bytes = File.ReadAllBytes(file);
+            var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+            if (texture.LoadImage(bytes))
+            {
+                texture.filterMode = FilterMode.Point;
+                texture.wrapMode = TextureWrapMode.Clamp;
+                texture.name = Path.GetFileNameWithoutExtension(file);
+                return texture;
+            }
+            Destroy(texture);
+            return null;
+        }
+
+        private Sprite CreateTileSprite(Texture2D texture, Rect rect, string name)
+        {
+            Sprite sprite = Sprite.Create(texture, rect, new Vector2(0f, 1f), tilePixelsPerUnit);
+            sprite.name = name;
+            return sprite;
         }
 
         private Sprite GetBackTileSprite(ZirconMapCellManifest cell)
@@ -130,22 +340,12 @@ namespace Zircon.Mobile.Game.World
 
             string root = Path.Combine(Application.dataPath, generatedTextureRoot.Replace('/', Path.DirectorySeparatorChar));
             string file = Path.Combine(root, folder, $"{folder}_{cell.BackImage:D5}_image.png");
-            if (!File.Exists(file))
+            Texture2D texture = LoadTexture(file);
+            if (texture == null)
                 return null;
-
-            byte[] bytes = File.ReadAllBytes(file);
-            var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false);
-            if (!texture.LoadImage(bytes))
-            {
-                Destroy(texture);
-                return null;
-            }
-
-            texture.filterMode = FilterMode.Point;
-            texture.wrapMode = TextureWrapMode.Clamp;
-            texture.name = Path.GetFileNameWithoutExtension(file);
-            Sprite sprite = Sprite.Create(texture, new Rect(0, 0, texture.width, texture.height), new Vector2(0f, 1f), tilePixelsPerUnit);
-            sprite.name = texture.name;
+            ownedTileTextures.Add(texture);
+            Sprite sprite = CreateTileSprite(texture,
+                new Rect(0, 0, texture.width, texture.height), texture.name);
             tileSprites[key] = sprite;
             return sprite;
         }
@@ -265,11 +465,11 @@ namespace Zircon.Mobile.Game.World
             return cell.Blocking ? new Color(1f, 0.2f, 0.15f, 0.45f) : new Color(0.15f, 0.75f, 1f, 0.35f);
         }
 
-        private static int GetKey(int x, int y)
+        private static long GetKey(int x, int y)
         {
             unchecked
             {
-                return (x * 397) ^ y;
+                return ((long)x << 32) ^ (uint)y;
             }
         }
     }

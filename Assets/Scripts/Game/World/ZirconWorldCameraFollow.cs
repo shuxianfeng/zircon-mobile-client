@@ -2,12 +2,13 @@ using UnityEngine;
 
 namespace Zircon.Mobile.Game.World
 {
+    [DefaultExecutionOrder(100)]
     public sealed class ZirconWorldCameraFollow : MonoBehaviour
     {
         [SerializeField] private ZirconWorldDebugRenderer worldRenderer;
         [SerializeField] private Camera targetCamera;
         [SerializeField] private Vector3 offset = new Vector3(0f, 0f, -10f);
-        [SerializeField] private float smoothTime = 0.12f;
+        [SerializeField] private float smoothTime = 0.05f;
 
         private Vector3 velocity;
 
