@@ -29,6 +29,7 @@ internal static class SystemDbMagicReader
 
         var magics = new List<MagicManifestEntry>();
         var items = new List<ItemManifestEntry>();
+        var npcInfos = new List<NpcInfoManifestEntry>();
         var npcPages = new List<NpcPageManifestEntry>();
         var npcButtons = new List<NpcButtonManifestEntry>();
         var npcGoods = new List<NpcGoodManifestEntry>();
@@ -73,7 +74,14 @@ internal static class SystemDbMagicReader
             {
                 ReadCollection(data, mapping, values => new MapManifestEntry(
                     GetInt(values, "Index"), GetString(values, "FileName"), GetString(values, "Description"), GetInt(values, "MiniMap")), maps);
-            }            else if (mapping.TypeName.EndsWith(".NPCPage", StringComparison.Ordinal))
+            }
+            else if (mapping.TypeName.EndsWith(".NPCInfo", StringComparison.Ordinal))
+            {
+                ReadCollection(data, mapping, values => new NpcInfoManifestEntry(
+                    GetInt(values, "Index"), GetString(values, "NPCName"), GetInt(values, "Region"),
+                    GetInt(values, "Image"), GetInt(values, "EntryPage")), npcInfos);
+            }
+            else if (mapping.TypeName.EndsWith(".NPCPage", StringComparison.Ordinal))
             {
                 ReadCollection(data, mapping, values => new NpcPageManifestEntry(
                     GetInt(values, "Index"), GetString(values, "Description"), GetInt(values, "DialogType"),
@@ -93,7 +101,7 @@ internal static class SystemDbMagicReader
             }
         }
 
-        return new SystemDbContent(magics, items, npcPages, npcButtons, npcGoods, quests, questTasks, maps);
+        return new SystemDbContent(magics, items, npcInfos, npcPages, npcButtons, npcGoods, quests, questTasks, maps);
     }
 
     public static void WriteContentManifests(string source, string outputDirectory, SystemDbContent content)
@@ -102,7 +110,7 @@ internal static class SystemDbMagicReader
         var options = new JsonSerializerOptions { WriteIndented = true };
         File.WriteAllText(Path.Combine(outputDirectory, "magics.manifest.json"), JsonSerializer.Serialize(new MagicManifest(Path.GetFileName(source), DateTime.UtcNow, content.Magics), options));
         File.WriteAllText(Path.Combine(outputDirectory, "items.manifest.json"), JsonSerializer.Serialize(new ItemManifest(Path.GetFileName(source), DateTime.UtcNow, content.Items), options));
-        File.WriteAllText(Path.Combine(outputDirectory, "npc-pages.manifest.json"), JsonSerializer.Serialize(new NpcPageManifest(Path.GetFileName(source), DateTime.UtcNow, content.NpcPages, content.NpcButtons, content.NpcGoods), options));
+        File.WriteAllText(Path.Combine(outputDirectory, "npc-pages.manifest.json"), JsonSerializer.Serialize(new NpcPageManifest(Path.GetFileName(source), DateTime.UtcNow, content.NpcInfos, content.NpcPages, content.NpcButtons, content.NpcGoods), options));
         File.WriteAllText(Path.Combine(outputDirectory, "quests.manifest.json"), JsonSerializer.Serialize(new QuestManifest(Path.GetFileName(source), DateTime.UtcNow, content.Quests, content.QuestTasks), options));
         File.WriteAllText(Path.Combine(outputDirectory, "maps.manifest.json"), JsonSerializer.Serialize(new MapInfoManifest(Path.GetFileName(source), DateTime.UtcNow, content.Maps), options));
     }
@@ -286,10 +294,12 @@ internal static class SystemDbMagicReader
 }
 
 internal sealed record MagicManifest(string Source, DateTime GeneratedUtc, IReadOnlyList<MagicManifestEntry> Magics);
-internal sealed record MagicManifestEntry(int Index, string Name, int MagicType, int CharacterClass, int School, int Mode, int Icon, int BaseCost, int LevelCost, int Delay, string Description);internal sealed record SystemDbContent(IReadOnlyList<MagicManifestEntry> Magics, IReadOnlyList<ItemManifestEntry> Items, IReadOnlyList<NpcPageManifestEntry> NpcPages, IReadOnlyList<NpcButtonManifestEntry> NpcButtons, IReadOnlyList<NpcGoodManifestEntry> NpcGoods, IReadOnlyList<QuestManifestEntry> Quests, IReadOnlyList<QuestTaskManifestEntry> QuestTasks, IReadOnlyList<MapManifestEntry> Maps);
+internal sealed record MagicManifestEntry(int Index, string Name, int MagicType, int CharacterClass, int School, int Mode, int Icon, int BaseCost, int LevelCost, int Delay, string Description);
+internal sealed record SystemDbContent(IReadOnlyList<MagicManifestEntry> Magics, IReadOnlyList<ItemManifestEntry> Items, IReadOnlyList<NpcInfoManifestEntry> NpcInfos, IReadOnlyList<NpcPageManifestEntry> NpcPages, IReadOnlyList<NpcButtonManifestEntry> NpcButtons, IReadOnlyList<NpcGoodManifestEntry> NpcGoods, IReadOnlyList<QuestManifestEntry> Quests, IReadOnlyList<QuestTaskManifestEntry> QuestTasks, IReadOnlyList<MapManifestEntry> Maps);
 internal sealed record ItemManifest(string Source, DateTime GeneratedUtc, IReadOnlyList<ItemManifestEntry> Items);
 internal sealed record ItemManifestEntry(int Index, string Name, int ItemType, int Image, int Durability, int Price, int Weight, int StackSize, bool CanRepair, bool CanSell, bool CanStore, bool CanTrade, bool CanDrop, string Description, int Rarity);
-internal sealed record NpcPageManifest(string Source, DateTime GeneratedUtc, IReadOnlyList<NpcPageManifestEntry> Pages, IReadOnlyList<NpcButtonManifestEntry> Buttons, IReadOnlyList<NpcGoodManifestEntry> Goods);
+internal sealed record NpcPageManifest(string Source, DateTime GeneratedUtc, IReadOnlyList<NpcInfoManifestEntry> Npcs, IReadOnlyList<NpcPageManifestEntry> Pages, IReadOnlyList<NpcButtonManifestEntry> Buttons, IReadOnlyList<NpcGoodManifestEntry> Goods);
+internal sealed record NpcInfoManifestEntry(int Index, string Name, int Region, int Image, int EntryPage);
 internal sealed record NpcPageManifestEntry(int Index, string Description, int DialogType, string Say, int SuccessPage, string Arguments);
 internal sealed record NpcButtonManifestEntry(int Index, int PageIndex, int ButtonId, int DestinationPageIndex);
 internal sealed record NpcGoodManifestEntry(int Index, int PageIndex, int ItemInfoIndex, decimal Rate);

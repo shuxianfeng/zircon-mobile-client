@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
+using Zircon.Mobile.Core.Protocol;
 using Zircon.Mobile.Game.Entities;
 
 namespace Zircon.Mobile.Game.World
@@ -11,7 +12,9 @@ namespace Zircon.Mobile.Game.World
         [SerializeField] private float tileScale = 0.32f;
         [SerializeField] private float tileHeightRatio = 2f / 3f;
         [SerializeField] private float markerSize = 0.12f;
-        [SerializeField] private float movementSecondsPerCell = 0.50f;
+        // PC walking and running both occupy one six-frame (about 600 ms)
+        // action. Running covers two cells during that single action.
+        [SerializeField] private float movementSecondsPerCell = 0.60f;
         [SerializeField] private float predictionTimeoutSeconds = 1.25f;
         [SerializeField] private int maxPredictedSteps = 2;
         [SerializeField] private float movementGraceSeconds = 0.06f;
@@ -47,11 +50,25 @@ namespace Zircon.Mobile.Game.World
             public Vector2Int PlannedCell;
             public byte AuthoritativeDirection;
             public byte VisualDirection;
+            public int VisualMoveDistance;
             public long LastPositionSequence;
             public bool IsCorrection;
             public float LastMovementEndedAt = float.NegativeInfinity;
-            public readonly Queue<Vector3> QueuedTargets = new Queue<Vector3>();
+            public readonly Queue<MovementSegment> QueuedTargets =
+                new Queue<MovementSegment>();
             public readonly List<Prediction> Unconfirmed = new List<Prediction>();
+        }
+
+        private readonly struct MovementSegment
+        {
+            public MovementSegment(Vector3 target, float duration)
+            {
+                Target = target;
+                Duration = duration;
+            }
+
+            public Vector3 Target { get; }
+            public float Duration { get; }
         }
 
         private readonly struct Prediction
@@ -88,10 +105,12 @@ namespace Zircon.Mobile.Game.World
                 Sprite sprite = GetSprite(entity, snapshot);
                 bool isLocalPlayer = snapshot.LocalPlayer != null &&
                                      entity.ObjectId == snapshot.LocalPlayer.ObjectId;
-                renderer.enabled = !isLocalPlayer && (sprite != markerSprite || showFallbackMarkers);
+                bool showMonsterCollisionFallback = entity.Kind == ZirconEntityKind.Monster && !entity.Dead;
+                renderer.enabled = !isLocalPlayer &&
+                                   (sprite != markerSprite || showFallbackMarkers || showMonsterCollisionFallback);
                 SetMovementTarget(entity.ObjectId, renderer,
                     entity.Location.X, entity.Location.Y, entity.Direction,
-                    entity.PositionSequence);
+                    entity.PositionSequence, entity.MoveDistance);
                 renderer.transform.localScale = sprite == markerSprite ? Vector3.one * markerSize : Vector3.one;
                 renderer.sprite = sprite;
                 renderer.color = sprite == markerSprite ? GetColour(entity, snapshot) : Color.white;
@@ -165,6 +184,13 @@ namespace Zircon.Mobile.Game.World
             return markers.TryGetValue(objectId, out renderer) && renderer != null;
         }
 
+        public bool IsUsingFallbackMarker(uint objectId)
+        {
+            return markerSprite != null &&
+                   markers.TryGetValue(objectId, out SpriteRenderer renderer) &&
+                   renderer != null && renderer.sprite == markerSprite;
+        }
+
         public bool TryGetLocalPlayerWorldPosition(out Vector3 position)
         {
             if (hasLocalPlayerObjectId)
@@ -215,7 +241,23 @@ namespace Zircon.Mobile.Game.World
             return false;
         }
 
+        public bool TryGetVisualMoveDistance(uint objectId, out int distance)
+        {
+            if (movementByObjectId.TryGetValue(objectId, out MovementState movement))
+            {
+                distance = movement.VisualMoveDistance;
+                return true;
+            }
+            distance = 0;
+            return false;
+        }
+
         public bool TryPredictLocalMove(byte direction)
+        {
+            return TryPredictLocalMove(direction, 1);
+        }
+
+        public bool TryPredictLocalMove(byte direction, int distance)
         {
             if (!hasLocalPlayerObjectId ||
                 !markers.TryGetValue(localPlayerObjectId, out SpriteRenderer renderer) ||
@@ -228,16 +270,19 @@ namespace Zircon.Mobile.Game.World
                 return false;
 
             Vector2Int delta = DirectionToDelta(direction);
-            if (delta == Vector2Int.zero)
+            if (delta == Vector2Int.zero || distance <= 0)
                 return false;
 
-            Vector2Int next = movement.PlannedCell + delta;
+            int moveDistance = Mathf.Clamp(distance, 1, 2);
+            Vector2Int next = movement.PlannedCell + delta * moveDistance;
             movement.PlannedCell = next;
             movement.VisualDirection = direction;
+            movement.VisualMoveDistance = moveDistance;
             movement.Unconfirmed.Add(new Prediction(next, Time.unscaledTime));
             if (movement.Unconfirmed.Count > 32)
                 movement.Unconfirmed.RemoveAt(0);
-            EnqueueMovement(renderer, movement, ToWorldPosition(next.x, next.y));
+            EnqueueMovement(renderer, movement, ToWorldPosition(next.x, next.y),
+                MovementActionDuration());
             return true;
         }
 
@@ -276,10 +321,12 @@ namespace Zircon.Mobile.Game.World
             int x,
             int y,
             byte direction,
-            long positionSequence)
+            long positionSequence,
+            int moveDistance)
         {
             var cell = new Vector2Int(x, y);
             Vector3 target = ToWorldPosition(x, y);
+            int normalizedMoveDistance = Mathf.Clamp(moveDistance, 0, 2);
             if (!movementByObjectId.TryGetValue(objectId, out MovementState movement))
             {
                 renderer.transform.localPosition = target;
@@ -294,6 +341,7 @@ namespace Zircon.Mobile.Game.World
                     PlannedCell = cell,
                     AuthoritativeDirection = direction,
                     VisualDirection = direction,
+                    VisualMoveDistance = normalizedMoveDistance,
                     LastPositionSequence = positionSequence,
                 };
                 return;
@@ -306,7 +354,13 @@ namespace Zircon.Mobile.Game.World
             // or reverse a local predicted segment. A genuine rejection is handled by
             // the bounded prediction timeout below.
             if (sameCell)
+            {
+                if (objectId != localPlayerObjectId || movement.Unconfirmed.Count == 0)
+                    movement.VisualMoveDistance = normalizedMoveDistance;
                 return;
+            }
+
+            movement.VisualMoveDistance = normalizedMoveDistance;
 
             Vector2Int previousCell = movement.HasAuthoritativeCell
                 ? movement.AuthoritativeCell
@@ -318,15 +372,24 @@ namespace Zircon.Mobile.Game.World
                 return;
 
             bool correctingPrediction = objectId == localPlayerObjectId &&
-                                        (movement.Unconfirmed.Count > 0 ||
-                                         (sameCell && WorldCellDistance(
-                                             renderer.transform.localPosition, target) > 0.01f));
+                                        movement.Unconfirmed.Count > 0;
             movement.Unconfirmed.Clear();
             movement.QueuedTargets.Clear();
             movement.PlannedCell = cell;
             movement.VisualDirection = direction;
+            if (correctingPrediction)
+            {
+                // A server correction must not be rendered as a standing character
+                // slowly sliding across the ground. Align immediately to the
+                // authoritative cell and let the next real move start normally.
+                SnapToAuthoritativeCell(renderer, movement, target);
+                return;
+            }
+
             float cells = CellDistance(previousCell, cell);
-            bool teleport = cells >= Mathf.Max(2, teleportCellThreshold);
+            int teleportThreshold = Mathf.Max(
+                Mathf.Max(2, teleportCellThreshold), normalizedMoveDistance + 1);
+            bool teleport = cells >= teleportThreshold;
             if (teleport)
             {
                 movement.From = target;
@@ -338,13 +401,14 @@ namespace Zircon.Mobile.Game.World
             }
             else
             {
-                float visualDistance = WorldCellDistance(renderer.transform.localPosition, target);
                 BeginMovement(renderer, movement, target,
-                    correctingPrediction
-                        ? Mathf.Max(0.05f, movementSecondsPerCell * Mathf.Max(0.25f, visualDistance))
-                        : Mathf.Max(0.05f, movementSecondsPerCell * Mathf.Max(1f, cells)),
+                    normalizedMoveDistance > 0 &&
+                    cells <= Mathf.Max(1f, normalizedMoveDistance)
+                        ? MovementActionDuration()
+                        : Mathf.Max(0.05f,
+                            movementSecondsPerCell * Mathf.Max(1f, cells)),
                     Time.unscaledTime,
-                    correctingPrediction);
+                    false);
             }
         }
 
@@ -374,18 +438,34 @@ namespace Zircon.Mobile.Game.World
             movement.QueuedTargets.Clear();
             movement.PlannedCell = movement.AuthoritativeCell;
             movement.VisualDirection = movement.AuthoritativeDirection;
+            movement.VisualMoveDistance = 0;
             Vector3 target = ToWorldPosition(
                 movement.AuthoritativeCell.x, movement.AuthoritativeCell.y);
-            float distance = WorldCellDistance(renderer.transform.localPosition, target);
-            BeginMovement(renderer, movement, target,
-                Mathf.Max(0.05f, movementSecondsPerCell * Mathf.Max(0.25f, distance)),
-                now, true);
+            // Timed-out prediction rollback is a network correction, not a new
+            // movement action. Snapping avoids the disturbing idle glide that
+            // otherwise happens after the joystick has already been released.
+            SnapToAuthoritativeCell(renderer, movement, target);
+        }
+
+        private static void SnapToAuthoritativeCell(
+            SpriteRenderer renderer,
+            MovementState movement,
+            Vector3 target)
+        {
+            movement.From = target;
+            movement.Target = target;
+            movement.StartedAt = Time.unscaledTime;
+            movement.Duration = 0f;
+            movement.IsCorrection = false;
+            movement.LastMovementEndedAt = float.NegativeInfinity;
+            renderer.transform.localPosition = target;
         }
 
         private void EnqueueMovement(
             SpriteRenderer renderer,
             MovementState movement,
-            Vector3 target)
+            Vector3 target,
+            float duration)
         {
             float now = Time.unscaledTime;
             AdvanceMovement(renderer, movement, now);
@@ -396,13 +476,13 @@ namespace Zircon.Mobile.Game.World
                 if (movement.LastMovementEndedAt > 0f && endedAgo >= 0f && endedAgo <= 0.10f)
                     startedAt = movement.LastMovementEndedAt;
                 BeginMovement(renderer, movement, target,
-                    Mathf.Max(0.05f, movementSecondsPerCell), startedAt, false);
+                    duration, startedAt, false);
                 // If this frame arrived just after the previous segment ended,
                 // catch up by that fraction instead of visibly pausing on the cell.
                 AdvanceMovement(renderer, movement, now);
                 return;
             }
-            movement.QueuedTargets.Enqueue(target);
+            movement.QueuedTargets.Enqueue(new MovementSegment(target, duration));
         }
 
         private void BeginMovement(
@@ -457,17 +537,20 @@ namespace Zircon.Mobile.Game.World
                     return;
                 }
 
-                Vector3 next = movement.QueuedTargets.Dequeue();
+                MovementSegment next = movement.QueuedTargets.Dequeue();
                 movement.From = movement.Target;
-                movement.Target = next;
+                movement.Target = next.Target;
                 movement.StartedAt = finishedAt;
                 movement.IsCorrection = false;
-                movement.Duration = Mathf.Max(0.05f,
-                    movementSecondsPerCell * Mathf.Max(1f,
-                        WorldCellDistance(movement.From, movement.Target)));
+                movement.Duration = Mathf.Max(0.05f, next.Duration);
             }
 
             renderer.transform.localPosition = movement.Target;
+        }
+
+        private float MovementActionDuration()
+        {
+            return Mathf.Max(0.05f, movementSecondsPerCell);
         }
 
         private float WorldCellDistance(Vector3 from, Vector3 to)
@@ -511,10 +594,51 @@ namespace Zircon.Mobile.Game.World
             if (kind == ZirconEntityKind.Monster && (entity.ModelIndex < 0 || entity.ModelIndex >= 2))
                 return markerSprite;
 
-            int frame = Mathf.FloorToInt(Time.time * spriteAnimationFps);
+            if (kind == ZirconEntityKind.Npc)
+                return GetStableGroupedSprite(sprites, entity.ModelIndex, entity.Direction);
+
+            if (kind == ZirconEntityKind.Player)
+            {
+                int directionGroup = entity.Direction >= 4 ? 1 : 0;
+                int frame = entity.Action == ZirconMirAction.Moving
+                    ? Mathf.FloorToInt(Time.time * spriteAnimationFps)
+                    : entity.Direction;
+                return GetStableGroupedSprite(sprites, directionGroup, frame);
+            }
+
+            if (kind == ZirconEntityKind.Monster)
+            {
+                int frame = Mathf.FloorToInt(Time.time * spriteAnimationFps);
+                return GetStableGroupedSprite(sprites, entity.ModelIndex, frame);
+            }
+
+            if (kind == ZirconEntityKind.Item)
+                return sprites[PositiveModulo(entity.ModelIndex, sprites.Count)];
+
+            int animatedFrame = Mathf.FloorToInt(Time.time * spriteAnimationFps);
             int objectOffset = (int)(entity.ObjectId % 2147483647u);
-            int index = Mathf.Abs(frame + objectOffset) % sprites.Count;
-            return sprites[index];
+            return sprites[PositiveModulo(animatedFrame + objectOffset, sprites.Count)];
+        }
+
+        private static Sprite GetStableGroupedSprite(List<Sprite> sprites, int groupValue, int frameValue)
+        {
+            const int FramesPerGroup = 4;
+            if (sprites.Count < FramesPerGroup)
+                return sprites[PositiveModulo(frameValue, sprites.Count)];
+
+            int groupCount = Mathf.Max(1, sprites.Count / FramesPerGroup);
+            int group = PositiveModulo(groupValue, groupCount);
+            int frame = PositiveModulo(frameValue, FramesPerGroup);
+            int index = group * FramesPerGroup + frame;
+            return sprites[index < sprites.Count ? index : sprites.Count - 1];
+        }
+
+        private static int PositiveModulo(int value, int divisor)
+        {
+            if (divisor <= 0)
+                return 0;
+            int result = value % divisor;
+            return result < 0 ? result + divisor : result;
         }
 
         private void LoadGeneratedSprites()

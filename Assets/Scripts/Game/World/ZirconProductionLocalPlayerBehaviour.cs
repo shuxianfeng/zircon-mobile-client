@@ -13,6 +13,7 @@ namespace Zircon.Mobile.Game.World
     /// Composes the local player from the PC client's body, dye overlay, hair and weapon libraries.
     /// The scene asset keeps the original script GUID while this production type uses a matching file name.
     /// </summary>
+    [DefaultExecutionOrder(-100)]
     public sealed class ZirconProductionLocalPlayerBehaviour : MonoBehaviour
     {
         [SerializeField] private ZirconProtocolProbeBehaviour session;
@@ -36,15 +37,29 @@ namespace Zircon.Mobile.Game.World
         private SpriteRenderer shadow;
         private SortingGroup sortingGroup;
         private Sprite shadowSprite;
+        private Coroutine loadRoutine;
         private bool loading;
         private bool ready;
         private bool incompatible;
+        private int previewDrawFrame = -1;
         private long observedActionSequence = long.MinValue;
         private ZirconMirAction observedServerAction = (ZirconMirAction)byte.MaxValue;
         private ZirconMirAction observedVisualAction = (ZirconMirAction)byte.MaxValue;
         private float serverActionStartedAt;
         private float visualActionStartedAt;
         private ZirconPlayerAppearanceCaptureBehaviour.Appearance? loadedAppearance;
+
+        public bool IsAppearanceReady => ready;
+        public bool IsAppearanceLoading => loading;
+        public bool IsAppearancePending
+        {
+            get
+            {
+                ZirconWorldSnapshot snapshot = session?.GetWorldSnapshot();
+                return !ready && !incompatible &&
+                       snapshot != null && snapshot.HasLocalPlayer;
+            }
+        }
 
         private sealed class LayerFrame
         {
@@ -82,7 +97,7 @@ namespace Zircon.Mobile.Game.World
                     !SameAppearance(appearance, loadedAppearance.Value))
                     ResetLoadedAppearance();
                 if (!loading && !ready && !incompatible)
-                    StartCoroutine(LoadSprites());
+                    loadRoutine = StartCoroutine(LoadSprites());
             }
 
             if (!ready)
@@ -125,17 +140,36 @@ namespace Zircon.Mobile.Game.World
                 worldRenderer.TryGetVisualDirection(id, out byte predictedDirection))
                 visualDirection = predictedDirection;
             int direction = Mathf.Clamp(visualDirection, (byte)0, (byte)(DirectionCount - 1));
-            AnimationSpec animation = GetAnimation(visualAction);
+            bool wantsRunning = visualAction == ZirconMirAction.Moving &&
+                                worldRenderer != null &&
+                                worldRenderer.TryGetVisualMoveDistance(id, out int visualMoveDistance) &&
+                                visualMoveDistance >= 2;
+            AnimationSpec animation = GetAnimation(visualAction, wantsRunning);
             int frame = Mathf.FloorToInt(Mathf.Max(0f, Time.time - visualActionStartedAt) * animation.Fps);
             frame = animation.Loop ? frame % animation.Count : Mathf.Min(frame, animation.Count - 1);
             int drawFrame = animation.Start + direction * 10 + frame;
+            int fallbackDrawFrame = -1;
+            if (wantsRunning)
+            {
+                AnimationSpec walking = GetAnimation(ZirconMirAction.Moving);
+                fallbackDrawFrame = walking.Start + direction * 10 + frame % walking.Count;
+            }
             if (!bodies.ContainsKey(drawFrame))
             {
-                AnimationSpec standing = GetAnimation(ZirconMirAction.Standing);
-                drawFrame = standing.Start + direction * 10 +
-                            (Mathf.FloorToInt(Time.time * standing.Fps) % standing.Count);
+                if (fallbackDrawFrame >= 0 && bodies.ContainsKey(fallbackDrawFrame))
+                {
+                    drawFrame = fallbackDrawFrame;
+                    fallbackDrawFrame = -1;
+                }
+                else
+                {
+                    AnimationSpec standing = GetAnimation(ZirconMirAction.Standing);
+                    drawFrame = standing.Start + direction * 10 +
+                                (Mathf.FloorToInt(Time.time * standing.Fps) % standing.Count);
+                    fallbackDrawFrame = -1;
+                }
             }
-            Apply(drawFrame, direction);
+            Apply(drawFrame, direction, fallbackDrawFrame);
 
             if (sortingGroup != null && markerRenderer != null)
                 sortingGroup.sortingOrder = markerRenderer.sortingOrder;
@@ -209,6 +243,7 @@ namespace Zircon.Mobile.Game.World
             int weaponShape = appearance.Weapon >= 1000 ? appearance.Weapon - 1000 : appearance.Weapon;
             int weaponBase = Math.Max(0, weaponShape % 10) * 5000;
             int[] drawFrames;
+            bool runningFramesStaged = false;
             bool productionMale = appearance.Gender == 0 && appearance.CharacterClass <= 2;
 
             if (productionMale)
@@ -225,7 +260,9 @@ namespace Zircon.Mobile.Game.World
                 hairSet = "player.standard.male.hair";
                 weaponSet = MaleWeaponSet(weaponShape / 10);
                 bodyBase = (appearance.Armour % 11) * 5000;
-                drawFrames = ProductionDrawFrames();
+                runningFramesStaged = HasAnimationFrames(
+                    catalog, bodySet, bodyBase, 160, 6);
+                drawFrames = ProductionDrawFrames(runningFramesStaged);
             }
             else if (appearance.Gender == 1 && appearance.CharacterClass <= 2)
             {
@@ -253,23 +290,52 @@ namespace Zircon.Mobile.Game.World
             bool weaponAvailable = weaponLibraryMatches &&
                                    catalog.TryGetFrame(weaponSet, weaponBase + drawFrames[0], out _);
             int loaded = 0;
-            foreach (int drawFrame in drawFrames)
-            {
-                int bodyIndex = bodyBase + drawFrame;
-                int hairIndex = hairBase + drawFrame;
-                int weaponIndex = weaponBase + drawFrame;
-                yield return Load(catalog, bodySet, bodyIndex, bodies, drawFrame, () => loaded++);
-                yield return Load(catalog, overlaySet, bodyIndex, overlays, drawFrame, () => loaded++);
-                if (showHair)
-                    yield return Load(catalog, hairSet, hairIndex, hairs, drawFrame, () => loaded++);
-                if (weaponAvailable)
-                    yield return Load(catalog, weaponSet, weaponIndex, weapons, drawFrame, () => loaded++);
-            }
+            ZirconWorldSnapshot snapshot = session?.GetWorldSnapshot();
+            int previewDirection = snapshot != null && snapshot.HasLocalPlayer &&
+                                   snapshot.LocalPlayer != null
+                ? Mathf.Clamp(snapshot.LocalPlayer.Direction, (byte)0, (byte)(DirectionCount - 1))
+                : 0;
+            previewDrawFrame = previewDirection * 10;
 
-            ready = bodies.ContainsKey(0) && (!showHair || hairs.ContainsKey(0));
+            // The local character is the visual anchor of the login transition.
+            // Load one complete standing frame first and expose it immediately;
+            // the remaining movement/combat frames continue in the background.
+            yield return LoadFrameLayers(
+                catalog, bodySet, overlaySet, hairSet, weaponSet,
+                bodyBase, hairBase, weaponBase, previewDrawFrame,
+                showHair, weaponAvailable, () => loaded++);
+
+            ready = bodies.ContainsKey(previewDrawFrame) &&
+                    (!showHair || hairs.ContainsKey(previewDrawFrame));
             incompatible = !ready;
             loadedAppearance = appearance;
+            if (!ready)
+            {
+                loading = false;
+                loadRoutine = null;
+                Debug.LogWarning("P2-B local player preview could not be loaded: drawFrame=" +
+                                 previewDrawFrame + " class=" + appearance.CharacterClass +
+                                 " gender=" + appearance.Gender);
+                yield break;
+            }
+
+            Debug.Log("P2-B local player preview ready: loadedLayers=" + loaded +
+                      " drawFrame=" + previewDrawFrame +
+                      " class=" + appearance.CharacterClass +
+                      " gender=" + appearance.Gender);
+
+            foreach (int drawFrame in drawFrames)
+            {
+                if (drawFrame == previewDrawFrame)
+                    continue;
+                yield return LoadFrameLayers(
+                    catalog, bodySet, overlaySet, hairSet, weaponSet,
+                    bodyBase, hairBase, weaponBase, drawFrame,
+                    showHair, weaponAvailable, () => loaded++);
+            }
+
             loading = false;
+            loadRoutine = null;
             Debug.Log("P2-B local player appearance ready: loadedLayers=" + loaded +
                       " drawFrames=" + drawFrames.Length +
                       " catalogFrames=" + catalog.FrameCount +
@@ -278,7 +344,33 @@ namespace Zircon.Mobile.Game.World
                       " armour=" + appearance.Armour +
                       " weapon=" + appearance.Weapon +
                       " weaponAvailable=" + weaponAvailable +
+                      " runningFrames=" + runningFramesStaged +
                       " ready=" + ready);
+        }
+
+        private IEnumerator LoadFrameLayers(
+            ZirconRuntimeVisualCatalog catalog,
+            string bodySet,
+            string overlaySet,
+            string hairSet,
+            string weaponSet,
+            int bodyBase,
+            int hairBase,
+            int weaponBase,
+            int drawFrame,
+            bool showHair,
+            bool weaponAvailable,
+            Action completed)
+        {
+            int bodyIndex = bodyBase + drawFrame;
+            int hairIndex = hairBase + drawFrame;
+            int weaponIndex = weaponBase + drawFrame;
+            yield return Load(catalog, bodySet, bodyIndex, bodies, drawFrame, completed);
+            yield return Load(catalog, overlaySet, bodyIndex, overlays, drawFrame, completed);
+            if (showHair)
+                yield return Load(catalog, hairSet, hairIndex, hairs, drawFrame, completed);
+            if (weaponAvailable)
+                yield return Load(catalog, weaponSet, weaponIndex, weapons, drawFrame, completed);
         }
 
         private static string MaleWeaponSet(int libraryGroup)
@@ -387,12 +479,12 @@ namespace Zircon.Mobile.Game.World
             return renderer;
         }
 
-        private void Apply(int drawFrame, int direction)
+        private void Apply(int drawFrame, int direction, int fallbackDrawFrame)
         {
-            ApplyLayer(body, bodies, drawFrame);
-            ApplyLayer(overlay, overlays, drawFrame);
-            ApplyLayer(hair, hairs, drawFrame);
-            ApplyLayer(weapon, weapons, drawFrame);
+            ApplyLayer(body, bodies, drawFrame, fallbackDrawFrame);
+            ApplyLayer(overlay, overlays, drawFrame, fallbackDrawFrame);
+            ApplyLayer(hair, hairs, drawFrame, fallbackDrawFrame);
+            ApplyLayer(weapon, weapons, drawFrame, fallbackDrawFrame);
 
             ZirconPlayerAppearanceCaptureBehaviour.Appearance value =
                 ZirconPlayerAppearanceCaptureBehaviour.Current.Value;
@@ -401,11 +493,19 @@ namespace Zircon.Mobile.Game.World
             weapon.sortingOrder = direction == 0 || direction >= 5 ? -1 : 3;
         }
 
-        private void ApplyLayer(SpriteRenderer renderer, Dictionary<int, LayerFrame> frames, int drawFrame)
+        private void ApplyLayer(
+            SpriteRenderer renderer,
+            Dictionary<int, LayerFrame> frames,
+            int drawFrame,
+            int fallbackDrawFrame)
         {
             if (renderer == null)
                 return;
-            if (!frames.TryGetValue(drawFrame, out LayerFrame frame))
+            if (!frames.TryGetValue(drawFrame, out LayerFrame frame) &&
+                (fallbackDrawFrame < 0 ||
+                 !frames.TryGetValue(fallbackDrawFrame, out frame)) &&
+                (previewDrawFrame < 0 ||
+                 !frames.TryGetValue(previewDrawFrame, out frame)))
             {
                 renderer.sprite = null;
                 return;
@@ -415,12 +515,14 @@ namespace Zircon.Mobile.Game.World
                 new Vector3(frame.Offset.x / pixelsPerUnit, -frame.Offset.y / pixelsPerUnit, 0f);
         }
 
-        private static AnimationSpec GetAnimation(ZirconMirAction action)
+        private static AnimationSpec GetAnimation(
+            ZirconMirAction action,
+            bool running = false)
         {
             switch (action)
             {
                 case ZirconMirAction.Moving:
-                    return new AnimationSpec(80, 6, 10f, true);
+                    return new AnimationSpec(running ? 160 : 80, 6, 10f, true);
                 case ZirconMirAction.Attack:
                 case ZirconMirAction.Mining:
                     return new AnimationSpec(720, 6, 10f, false);
@@ -440,11 +542,13 @@ namespace Zircon.Mobile.Game.World
             }
         }
 
-        private static int[] ProductionDrawFrames()
+        private static int[] ProductionDrawFrames(bool includeRunning)
         {
             var values = new List<int>();
             AddAnimationFrames(values, 0, 4);
             AddAnimationFrames(values, 80, 6);
+            if (includeRunning)
+                AddAnimationFrames(values, 160, 6);
             AddAnimationFrames(values, 480, 2);
             AddAnimationFrames(values, 560, 5);
             AddAnimationFrames(values, 640, 5);
@@ -466,6 +570,21 @@ namespace Zircon.Mobile.Game.World
             for (int direction = 0; direction < DirectionCount; direction++)
             for (int frame = 0; frame < count; frame++)
                 values.Add(start + direction * 10 + frame);
+        }
+
+        private static bool HasAnimationFrames(
+            ZirconRuntimeVisualCatalog catalog,
+            string setId,
+            int baseIndex,
+            int start,
+            int count)
+        {
+            for (int direction = 0; direction < DirectionCount; direction++)
+            for (int frame = 0; frame < count; frame++)
+                if (!catalog.TryGetFrame(
+                        setId, baseIndex + start + direction * 10 + frame, out _))
+                    return false;
+            return true;
         }
 
         private Sprite GetOrCreateShadowSprite()
@@ -494,6 +613,12 @@ namespace Zircon.Mobile.Game.World
 
         private void ResetLoadedAppearance()
         {
+            if (loadRoutine != null)
+            {
+                StopCoroutine(loadRoutine);
+                loadRoutine = null;
+            }
+            loading = false;
             if (composition != null)
                 Destroy(composition);
             composition = null;
@@ -506,6 +631,7 @@ namespace Zircon.Mobile.Game.World
             ClearFrames(weapons);
             ready = false;
             incompatible = false;
+            previewDrawFrame = -1;
             loadedAppearance = null;
         }
 

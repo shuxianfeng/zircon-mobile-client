@@ -15,15 +15,19 @@ namespace Zircon.Mobile.Game.World
     {
         [SerializeField] private ZirconProtocolProbeBehaviour session;
         [SerializeField] private ZirconMapDebugRenderer mapRenderer;
+        [SerializeField] private ZirconProductionLocalPlayerBehaviour localPlayerVisuals;
         [SerializeField] private float tileScale = 0.32f;
         [SerializeField] private float tileHeightRatio = 2f / 3f;
         [SerializeField] private float pixelsPerUnit = 150f;
         [SerializeField] private int visibleRadiusX = 30;
         [SerializeField] private int visibleRadiusY = 28;
 
-        private readonly Dictionary<string, ResourceSprite> sprites =
-            new Dictionary<string, ResourceSprite>();
         private ZirconMapManifest rendered;
+        private ZirconMapManifest requestedManifest;
+        private int requestedMapIndex = -1;
+        private int observedMapIndex = -1;
+        private int requestVersion;
+        private float nextLoadAttemptAt;
         private Transform root;
         private bool loading;
         private bool hasVisibleCellBounds;
@@ -32,13 +36,30 @@ namespace Zircon.Mobile.Game.World
         private readonly List<MapObjectVisual> visuals = new List<MapObjectVisual>();
         private readonly Dictionary<int, List<MapObjectVisual>> visualsByColumn =
             new Dictionary<int, List<MapObjectVisual>>();
-        private Texture2D objectAtlas;
+        private ResourceCache activeCache;
+        private ResourceCache pendingCache;
+
+        public int EffectiveVisibleRadiusX => visibleRadiusX > 1 ? visibleRadiusX : 30;
+        public int EffectiveVisibleRadiusY => visibleRadiusY > 1 ? visibleRadiusY : 28;
 
         private sealed class ResourceSprite
         {
             public Sprite Sprite;
             public Texture2D SourceTexture;
             public string Name;
+        }
+
+        private sealed class ResourceCache
+        {
+            public ResourceCache(int mapIndex)
+            {
+                MapIndex = mapIndex;
+            }
+
+            public int MapIndex { get; }
+            public readonly Dictionary<string, ResourceSprite> Sprites =
+                new Dictionary<string, ResourceSprite>();
+            public readonly List<Texture2D> Atlases = new List<Texture2D>();
         }
 
         private sealed class MapObjectVisual
@@ -51,27 +72,77 @@ namespace Zircon.Mobile.Game.World
 
         private readonly struct MapDefinition
         {
-            public MapDefinition(int mapIndex, string textureSourceRoot)
+            public MapDefinition(int mapIndex, string expectedSource, string textureSourceRoot)
             {
                 MapIndex = mapIndex;
+                ExpectedSource = expectedSource;
                 TextureSourceRoot = textureSourceRoot;
             }
 
             public int MapIndex { get; }
+            public string ExpectedSource { get; }
             public string TextureSourceRoot { get; }
+        }
+
+        private void Awake()
+        {
+            if (localPlayerVisuals == null)
+                localPlayerVisuals = GetComponent<ZirconProductionLocalPlayerBehaviour>();
         }
 
         private void Update()
         {
             if (mapRenderer == null)
                 return;
+
             ZirconWorldSnapshot snapshot = session?.GetWorldSnapshot();
-            if (snapshot != null)
-                UpdateVisibleRegion(snapshot.Location.X, snapshot.Location.Y);
-            if (loading || mapRenderer.Manifest == null || mapRenderer.Manifest == rendered)
+            if (snapshot == null)
                 return;
-            if (snapshot != null && TryGetDefinition(snapshot.MapIndex, out MapDefinition definition))
-                StartCoroutine(LoadAndRender(mapRenderer.Manifest, definition));
+
+            UpdateVisibleRegion(snapshot.Location.X, snapshot.Location.Y);
+            if (snapshot.MapIndex != observedMapIndex)
+            {
+                observedMapIndex = snapshot.MapIndex;
+                requestedManifest = null;
+                requestedMapIndex = -1;
+                requestVersion++;
+                if (root != null)
+                    root.gameObject.SetActive(activeCache != null &&
+                                              activeCache.MapIndex == observedMapIndex);
+                if (pendingCache != null &&
+                    !ReferenceEquals(pendingCache, activeCache) &&
+                    pendingCache.MapIndex != observedMapIndex)
+                {
+                    DisposeCache(pendingCache);
+                    pendingCache = null;
+                }
+            }
+
+            ZirconMapManifest manifest = mapRenderer.Manifest;
+            if (manifest == null ||
+                !TryGetDefinition(snapshot.MapIndex, out MapDefinition definition) ||
+                !ManifestMatchesDefinition(manifest, definition))
+                return;
+
+            if (!ReferenceEquals(requestedManifest, manifest) ||
+                requestedMapIndex != definition.MapIndex)
+            {
+                requestedManifest = manifest;
+                requestedMapIndex = definition.MapIndex;
+                requestVersion++;
+            }
+
+            if (loading || ReferenceEquals(manifest, rendered) ||
+                Time.unscaledTime < nextLoadAttemptAt)
+                return;
+
+            // Houses and trees are the heaviest first-entry resource batch.
+            // Give the local player's preview frame exclusive priority so the
+            // controlled character appears before decorative map objects.
+            if (localPlayerVisuals != null && localPlayerVisuals.IsAppearancePending)
+                return;
+
+            StartCoroutine(LoadAndRender(manifest, definition, requestVersion));
         }
 
         private void UpdateVisibleRegion(int centerX, int centerY)
@@ -83,10 +154,8 @@ namespace Zircon.Mobile.Game.World
             bool hadVisibleCellBounds = hasVisibleCellBounds;
             RectInt previousBounds = visibleCellBounds;
             visibleCenter = center;
-            // Older scenes do not serialize newly added fields. Preserve the tuned
-            // mobile defaults instead of collapsing the view to a one-cell radius.
-            int radiusX = visibleRadiusX > 1 ? visibleRadiusX : 30;
-            int radiusY = visibleRadiusY > 1 ? visibleRadiusY : 28;
+            int radiusX = EffectiveVisibleRadiusX;
+            int radiusY = EffectiveVisibleRadiusY;
             visibleCellBounds = new RectInt(
                 centerX - radiusX,
                 centerY - radiusY,
@@ -103,9 +172,8 @@ namespace Zircon.Mobile.Game.World
                 return;
             }
 
-            // Limit visibility work to columns touched by the old/new camera areas.
-            // This turns the former whole-map spike every four cells into small edge
-            // updates on each grid transition, keeping camera motion even.
+            // All production object strips are one map column wide. Restrict
+            // incremental visibility work to columns touched by either bounds.
             int xMin = Mathf.Min(previousBounds.xMin, visibleCellBounds.xMin) - 1;
             int xMax = Mathf.Max(previousBounds.xMax, visibleCellBounds.xMax) + 1;
             for (int x = xMin; x < xMax; x++)
@@ -130,71 +198,237 @@ namespace Zircon.Mobile.Game.World
                 visual.Renderer.enabled = visible;
         }
 
-        private IEnumerator LoadAndRender(ZirconMapManifest manifest, MapDefinition definition)
+        private IEnumerator LoadAndRender(
+            ZirconMapManifest manifest,
+            MapDefinition definition,
+            int version)
         {
             loading = true;
-            rendered = manifest;
-            Clear();
+            IReadOnlyList<ZirconMapCellManifest> objectCells = GetObjectCells(manifest);
+            if (objectCells == null)
+            {
+                FailLoad("object cell data is missing", false);
+                yield break;
+            }
 
+            ResourceCache cache = GetResourceCache(definition.MapIndex);
             var needed = new HashSet<string>();
-            foreach (ZirconMapCellManifest cell in manifest.SampleCells)
+            foreach (ZirconMapCellManifest cell in objectCells)
             {
                 AddKey(needed, cell.MiddleFile, cell.MiddleImage, definition.MapIndex);
                 AddKey(needed, cell.FrontFile, cell.FrontImage, definition.MapIndex);
             }
 
-            int loadedCount = 0;
+            int newlyLoaded = 0;
+            int failed = 0;
             foreach (string key in needed)
             {
+                if (cache.Sprites.TryGetValue(key, out ResourceSprite cached) &&
+                    (cached?.Sprite != null || cached?.SourceTexture != null))
+                    continue;
+
                 string[] parts = key.Split(':');
                 int fileId = int.Parse(parts[0]);
                 int index = int.Parse(parts[1]);
                 if (!ZirconMapDebugRenderer.TryGetMapLibraryFolder(fileId, out string folder))
+                {
+                    failed++;
                     continue;
+                }
+
                 string sourceName = ZirconMapDebugRenderer.GetMapLibrarySourceName(folder);
                 string file = sourceName + "_" + index.ToString("D5") + "_image.png";
                 string relative = "Generated/Textures/MapData/" +
                                   definition.TextureSourceRoot + folder + "/" + file;
                 byte[] bytes = null;
+                string loadError = null;
                 yield return ZirconAssetStore.LoadBytes(relative,
                     value => bytes = value,
-                    value => Debug.LogWarning("P2-B map object missing " + file + ": " + value));
+                    value => loadError = value);
+
+                if (!IsRequestCurrent(manifest, definition, version))
+                {
+                    FailLoad("superseded by a newer map chunk", true);
+                    yield break;
+                }
+
                 if (bytes == null || bytes.Length == 0)
+                {
+                    failed++;
+                    Debug.LogWarning("P2-B map object missing " + file + ": " + loadError, this);
                     continue;
+                }
 
                 var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false);
                 if (!texture.LoadImage(bytes))
                 {
                     Destroy(texture);
+                    failed++;
+                    Debug.LogWarning("P2-B map object image is invalid " + file, this);
                     continue;
                 }
+
                 texture.filterMode = FilterMode.Point;
                 texture.wrapMode = TextureWrapMode.Clamp;
-                sprites[key] = new ResourceSprite
+                cache.Sprites[key] = new ResourceSprite
                 {
                     SourceTexture = texture,
                     Name = file,
                 };
-                loadedCount++;
+                newlyLoaded++;
             }
 
-            BuildObjectAtlas();
+            if (!IsRequestCurrent(manifest, definition, version))
+            {
+                FailLoad("superseded by a newer map chunk", true);
+                yield break;
+            }
 
-            root = new GameObject("ProductionMapObjectLayers_" + definition.MapIndex).transform;
-            root.SetParent(mapRenderer.transform, false);
+            BuildObjectAtlas(cache);
+            int resolved = 0;
+            foreach (string key in needed)
+            {
+                if (cache.Sprites.TryGetValue(key, out ResourceSprite resource) &&
+                    resource?.Sprite != null)
+                    resolved++;
+            }
+            // A handful of source maps intentionally reference empty legacy
+            // frames. Keep tolerating individual misses, but never replace a
+            // valid old layer when the whole resource batch failed.
+            int attemptedLoads = newlyLoaded + failed;
+            bool batchFailure = failed > 16 && failed * 2 > attemptedLoads;
+            if (needed.Count > 0 && (resolved == 0 || batchFailure))
+            {
+                FailLoad("object resource batch failed (resolved=" + resolved +
+                         " attempted=" + attemptedLoads + " failures=" + failed + ")", false);
+                yield break;
+            }
+
+            if (!IsRequestCurrent(manifest, definition, version))
+            {
+                FailLoad("superseded by a newer map chunk", true);
+                yield break;
+            }
+
+            Transform stagedRoot = new GameObject(
+                "ProductionMapObjectLayers_" + definition.MapIndex + "_Pending").transform;
+            stagedRoot.SetParent(mapRenderer.transform, false);
+            stagedRoot.gameObject.SetActive(false);
+            var stagedVisuals = new List<MapObjectVisual>();
+            var stagedColumns = new Dictionary<int, List<MapObjectVisual>>();
             int middle = 0;
             int front = 0;
-            foreach (ZirconMapCellManifest cell in manifest.SampleCells)
+            foreach (ZirconMapCellManifest cell in objectCells)
             {
-                if (Create(cell, cell.MiddleFile, cell.MiddleImage, false))
+                if (Create(cell, cell.MiddleFile, cell.MiddleImage, false,
+                        cache, stagedRoot, stagedVisuals, stagedColumns))
                     middle++;
-                if (Create(cell, cell.FrontFile, cell.FrontImage, true))
+                if (Create(cell, cell.FrontFile, cell.FrontImage, true,
+                        cache, stagedRoot, stagedVisuals, stagedColumns))
                     front++;
             }
-            loading = false;
+
+            if (!IsRequestCurrent(manifest, definition, version))
+            {
+                Destroy(stagedRoot.gameObject);
+                FailLoad("superseded while constructing the object root", true);
+                yield break;
+            }
+
+            CommitGeneration(manifest, definition, cache, stagedRoot, stagedVisuals, stagedColumns);
             Debug.Log("P2-B production map objects ready: map=" + definition.MapIndex +
-                      " sprites=" + loadedCount + "/" + needed.Count +
+                      " cachedSprites=" + cache.Sprites.Count +
+                      " newlyLoaded=" + newlyLoaded +
+                      " resolved=" + resolved + "/" + needed.Count +
+                      " missing=" + failed +
                       " middle=" + middle + " front=" + front);
+        }
+
+        private static IReadOnlyList<ZirconMapCellManifest> GetObjectCells(
+            ZirconMapManifest manifest)
+        {
+            return manifest?.ObjectCells ?? manifest?.SampleCells;
+        }
+
+        private bool IsRequestCurrent(
+            ZirconMapManifest manifest,
+            MapDefinition definition,
+            int version)
+        {
+            return version == requestVersion &&
+                   requestedMapIndex == definition.MapIndex &&
+                   observedMapIndex == definition.MapIndex &&
+                   ReferenceEquals(requestedManifest, manifest) &&
+                   ReferenceEquals(mapRenderer?.Manifest, manifest);
+        }
+
+        private void FailLoad(string reason, bool superseded)
+        {
+            loading = false;
+            if (superseded)
+            {
+                nextLoadAttemptAt = 0f;
+                Debug.Log("P2-B map object load discarded: " + reason, this);
+            }
+            else
+            {
+                nextLoadAttemptAt = Time.unscaledTime + 1f;
+                Debug.LogError("P2-B map object load failed; retaining the previous layer: " + reason, this);
+            }
+        }
+
+        private ResourceCache GetResourceCache(int mapIndex)
+        {
+            if (activeCache != null && activeCache.MapIndex == mapIndex)
+                return activeCache;
+            if (pendingCache != null && pendingCache.MapIndex == mapIndex)
+                return pendingCache;
+
+            if (pendingCache != null && !ReferenceEquals(pendingCache, activeCache))
+                DisposeCache(pendingCache);
+            pendingCache = new ResourceCache(mapIndex);
+            return pendingCache;
+        }
+
+        private void CommitGeneration(
+            ZirconMapManifest manifest,
+            MapDefinition definition,
+            ResourceCache cache,
+            Transform stagedRoot,
+            List<MapObjectVisual> stagedVisuals,
+            Dictionary<int, List<MapObjectVisual>> stagedColumns)
+        {
+            Transform oldRoot = root;
+            ResourceCache oldCache = activeCache;
+            if (oldRoot != null)
+                oldRoot.gameObject.SetActive(false);
+
+            root = stagedRoot;
+            root.name = "ProductionMapObjectLayers_" + definition.MapIndex;
+            activeCache = cache;
+            if (ReferenceEquals(pendingCache, cache))
+                pendingCache = null;
+
+            visuals.Clear();
+            visuals.AddRange(stagedVisuals);
+            visualsByColumn.Clear();
+            foreach (KeyValuePair<int, List<MapObjectVisual>> pair in stagedColumns)
+                visualsByColumn[pair.Key] = pair.Value;
+
+            rendered = manifest;
+            root.gameObject.SetActive(true);
+            loading = false;
+            nextLoadAttemptAt = 0f;
+
+            if (oldRoot != null)
+                Destroy(oldRoot.gameObject);
+            if (oldCache != null && !ReferenceEquals(oldCache, activeCache))
+                DisposeCache(oldCache);
+            if (pendingCache != null && !ReferenceEquals(pendingCache, activeCache))
+            {
+                DisposeCache(pendingCache);
+                pendingCache = null;
+            }
         }
 
         private static void AddKey(
@@ -209,13 +443,24 @@ namespace Zircon.Mobile.Game.World
             keys.Add(fileId + ":" + (image - 1));
         }
 
-        private bool Create(ZirconMapCellManifest cell, int fileId, int image, bool front)
+        private bool Create(
+            ZirconMapCellManifest cell,
+            int fileId,
+            int image,
+            bool front,
+            ResourceCache cache,
+            Transform targetRoot,
+            List<MapObjectVisual> targetVisuals,
+            Dictionary<int, List<MapObjectVisual>> targetColumns)
         {
             if (image <= 0 ||
-                !sprites.TryGetValue(fileId + ":" + (image - 1), out ResourceSprite resource))
+                !cache.Sprites.TryGetValue(fileId + ":" + (image - 1),
+                    out ResourceSprite resource) ||
+                resource?.Sprite == null)
                 return false;
+
             var go = new GameObject((front ? "Front" : "Middle") + "_" + cell.X + "_" + cell.Y);
-            go.transform.SetParent(root, false);
+            go.transform.SetParent(targetRoot, false);
             // Crystal/Zircon map objects ignore the ZL frame offsets. 48-pixel-wide
             // strips of different heights are all left aligned and share the bottom
             // edge of their owning 48x32 map cell.
@@ -239,11 +484,11 @@ namespace Zircon.Mobile.Game.World
                 Y = cell.Y,
                 HeightCells = heightCells,
             };
-            visuals.Add(visual);
-            if (!visualsByColumn.TryGetValue(cell.X, out List<MapObjectVisual> column))
+            targetVisuals.Add(visual);
+            if (!targetColumns.TryGetValue(cell.X, out List<MapObjectVisual> column))
             {
                 column = new List<MapObjectVisual>();
-                visualsByColumn[cell.X] = column;
+                targetColumns[cell.X] = column;
             }
             column.Add(visual);
             return true;
@@ -262,13 +507,13 @@ namespace Zircon.Mobile.Game.World
                    y < bounds.yMax + Mathf.Max(1, heightCells);
         }
 
-        private void BuildObjectAtlas()
+        private void BuildObjectAtlas(ResourceCache cache)
         {
-            var resources = new List<ResourceSprite>(sprites.Count);
-            var textures = new List<Texture2D>(sprites.Count);
-            foreach (ResourceSprite resource in sprites.Values)
+            var resources = new List<ResourceSprite>();
+            var textures = new List<Texture2D>();
+            foreach (ResourceSprite resource in cache.Sprites.Values)
             {
-                if (resource?.SourceTexture == null)
+                if (resource?.Sprite != null || resource?.SourceTexture == null)
                     continue;
                 resources.Add(resource);
                 textures.Add(resource.SourceTexture);
@@ -288,24 +533,24 @@ namespace Zircon.Mobile.Game.World
                 return;
             }
 
-            objectAtlas = atlas;
-            objectAtlas.name = "ZirconMapObjectAtlas";
-            objectAtlas.filterMode = FilterMode.Point;
-            objectAtlas.wrapMode = TextureWrapMode.Clamp;
+            atlas.name = "ZirconMapObjectAtlas_" + cache.MapIndex + "_" + cache.Atlases.Count;
+            atlas.filterMode = FilterMode.Point;
+            atlas.wrapMode = TextureWrapMode.Clamp;
+            cache.Atlases.Add(atlas);
             for (int i = 0; i < resources.Count; i++)
             {
                 Texture2D source = resources[i].SourceTexture;
                 Rect packed = rects[i];
                 Rect pixels = new Rect(
-                    Mathf.Round(packed.x * objectAtlas.width),
-                    Mathf.Round(packed.y * objectAtlas.height),
+                    Mathf.Round(packed.x * atlas.width),
+                    Mathf.Round(packed.y * atlas.height),
                     source.width,
                     source.height);
-                resources[i].Sprite = CreateObjectSprite(objectAtlas, pixels, resources[i].Name);
+                resources[i].Sprite = CreateObjectSprite(atlas, pixels, resources[i].Name);
                 Destroy(source);
                 resources[i].SourceTexture = null;
             }
-            objectAtlas.Apply(false, true);
+            atlas.Apply(false, true);
         }
 
         private bool TryPack(
@@ -332,6 +577,7 @@ namespace Zircon.Mobile.Game.World
             {
                 Destroy(atlas);
                 atlas = null;
+                rects = null;
                 return false;
             }
             for (int i = 0; i < rects.Length; i++)
@@ -355,18 +601,27 @@ namespace Zircon.Mobile.Game.World
             return sprite;
         }
 
+        private static bool ManifestMatchesDefinition(
+            ZirconMapManifest manifest,
+            MapDefinition definition)
+        {
+            return manifest != null &&
+                   string.Equals(manifest.Source, definition.ExpectedSource,
+                       StringComparison.OrdinalIgnoreCase);
+        }
+
         private static bool TryGetDefinition(int mapIndex, out MapDefinition definition)
         {
             switch (mapIndex)
             {
                 case 1:
-                    definition = new MapDefinition(1, "Base_");
+                    definition = new MapDefinition(1, "0.map", "Base_");
                     return true;
                 case 5:
-                    definition = new MapDefinition(5, "Map5/");
+                    definition = new MapDefinition(5, "1.map", "Map5/");
                     return true;
                 case 6:
-                    definition = new MapDefinition(6, "Map6/");
+                    definition = new MapDefinition(6, "2.map", "Map6/");
                     return true;
                 default:
                     definition = default;
@@ -385,24 +640,45 @@ namespace Zircon.Mobile.Game.World
             return false;
         }
 
-        private void Clear()
+        private void DisposeCache(ResourceCache cache)
         {
-            if (root != null)
-                Destroy(root.gameObject);
-            root = null;
-            visuals.Clear();
-            visualsByColumn.Clear();
-            foreach (ResourceSprite resource in sprites.Values)
+            if (cache == null)
+                return;
+            foreach (ResourceSprite resource in cache.Sprites.Values)
             {
                 if (resource?.Sprite != null)
                     Destroy(resource.Sprite);
                 if (resource?.SourceTexture != null)
                     Destroy(resource.SourceTexture);
             }
-            sprites.Clear();
-            if (objectAtlas != null)
-                Destroy(objectAtlas);
-            objectAtlas = null;
+            cache.Sprites.Clear();
+            foreach (Texture2D atlas in cache.Atlases)
+                if (atlas != null)
+                    Destroy(atlas);
+            cache.Atlases.Clear();
+        }
+
+        private void Clear()
+        {
+            requestVersion++;
+            if (root != null)
+                Destroy(root.gameObject);
+            root = null;
+            visuals.Clear();
+            visualsByColumn.Clear();
+
+            ResourceCache oldActive = activeCache;
+            activeCache = null;
+            if (oldActive != null)
+                DisposeCache(oldActive);
+            if (pendingCache != null && !ReferenceEquals(pendingCache, oldActive))
+                DisposeCache(pendingCache);
+            pendingCache = null;
+            rendered = null;
+            requestedManifest = null;
+            requestedMapIndex = -1;
+            loading = false;
+            nextLoadAttemptAt = 0f;
         }
 
         private void OnDestroy()

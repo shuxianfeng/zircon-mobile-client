@@ -1,6 +1,4 @@
-using System.Collections;
 using System.Collections.Generic;
-using System.Reflection;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -22,9 +20,12 @@ namespace Zircon.Mobile.Game.World
         private ZirconMapManifest cleanedManifest;
         private float nextStatusRefresh;
         private ZirconProductionEntityPresentationBehaviour productionPresentation;
-        private bool spriteSequencesStabilized;
         private readonly Dictionary<uint, ZirconEntityKind> entityKinds =
             new Dictionary<uint, ZirconEntityKind>();
+        private readonly Dictionary<uint, EntityNameLabel> entityNameLabels =
+            new Dictionary<uint, EntityNameLabel>();
+        private readonly HashSet<uint> seenEntityLabelIds = new HashSet<uint>();
+        private readonly List<uint> removedEntityLabelIds = new List<uint>();
 
         private void OnEnable()
         {
@@ -40,6 +41,7 @@ namespace Zircon.Mobile.Game.World
         {
             RemoveMapFallbackBlocks();
             StabilizeEntitySprites();
+            UpdateEntityNameLabels();
 
             if (Time.unscaledTime >= nextStatusRefresh)
             {
@@ -85,26 +87,6 @@ namespace Zircon.Mobile.Game.World
             if (worldRenderer == null)
                 return;
 
-            if (!spriteSequencesStabilized)
-            {
-                // The exported fallback files are sparse validation samples,
-                // not complete action sequences. Stabilize them once after the
-                // world renderer has performed its first load.
-                FieldInfo dictionaryField = typeof(ZirconWorldDebugRenderer).GetField(
-                    "spritesByKind", BindingFlags.Instance | BindingFlags.NonPublic);
-                if (dictionaryField?.GetValue(worldRenderer) is IDictionary dictionary)
-                {
-                    foreach (DictionaryEntry entry in dictionary)
-                        if (entry.Key is ZirconEntityKind kind &&
-                            kind != ZirconEntityKind.Monster &&
-                            kind != ZirconEntityKind.Spell &&
-                            entry.Value is IList frames)
-                            while (frames.Count > 1)
-                                frames.RemoveAt(frames.Count - 1);
-                }
-                spriteSequencesStabilized = true;
-            }
-
             ZirconWorldSnapshot snapshot = session?.GetWorldSnapshot();
             if (snapshot == null)
                 return;
@@ -121,17 +103,134 @@ namespace Zircon.Mobile.Game.World
                 if (spriteRenderer != null && runtimeMaterial != null && spriteRenderer.sharedMaterial != runtimeMaterial)
                     spriteRenderer.sharedMaterial = runtimeMaterial;
 
+                // Unsupported monster models intentionally use the renderer's
+                // small collision marker. Do not enlarge that marker to the
+                // normal character scale while stabilizing formal sprites.
+                if (worldRenderer.IsUsingFallbackMarker(pair.Key))
+                    continue;
+
                 float scale = 1f;
                 if (snapshot.LocalPlayer != null && pair.Key == snapshot.LocalPlayer.ObjectId)
                     scale = 1f;
-                else if (pair.Value == ZirconEntityKind.Player)
-                    scale = 1.55f;
-                else if (pair.Value == ZirconEntityKind.Npc)
-                    scale = 1.5f;
-                else if (pair.Value == ZirconEntityKind.Monster)
-                    scale = 0.9f;
+                else if (pair.Value == ZirconEntityKind.Player ||
+                         pair.Value == ZirconEntityKind.Npc ||
+                         pair.Value == ZirconEntityKind.Monster)
+                    scale = 1f;
                 spriteRenderer.transform.localScale = Vector3.one * scale;
             }
+        }
+
+        private void UpdateEntityNameLabels()
+        {
+            ZirconWorldSnapshot snapshot = session?.GetWorldSnapshot();
+            if (snapshot == null || worldRenderer == null)
+                return;
+
+            seenEntityLabelIds.Clear();
+            foreach (ZirconEntityState entity in snapshot.Entities)
+            {
+                bool localPlayer = snapshot.LocalPlayer != null &&
+                                   entity != null &&
+                                   entity.ObjectId == snapshot.LocalPlayer.ObjectId;
+                bool shouldLabel = entity != null && !entity.Dead &&
+                                   (entity.Kind == ZirconEntityKind.Npc ||
+                                    entity.Kind == ZirconEntityKind.Monster ||
+                                    (entity.Kind == ZirconEntityKind.Player && !localPlayer));
+                if (!shouldLabel ||
+                    !worldRenderer.TryGetEntityRenderer(entity.ObjectId, out SpriteRenderer renderer) ||
+                    renderer == null)
+                    continue;
+
+                seenEntityLabelIds.Add(entity.ObjectId);
+                if (!entityNameLabels.TryGetValue(entity.ObjectId, out EntityNameLabel entry) || entry.Root == null)
+                {
+                    entry = CreateEntityNameLabel(entity.ObjectId, renderer);
+                    entityNameLabels[entity.ObjectId] = entry;
+                }
+
+                string name;
+                Color color;
+                if (entity.Kind == ZirconEntityKind.Npc)
+                {
+                    ZirconSystemCatalogBehaviour.NpcEntry npc = catalog?.GetNpc(entity.ModelIndex);
+                    name = !string.IsNullOrWhiteSpace(npc?.Name)
+                        ? npc.Name
+                        : "NPC " + entity.ModelIndex;
+                    color = new Color(0.18f, 1f, 0.55f, 1f);
+                }
+                else if (entity.Kind == ZirconEntityKind.Monster)
+                {
+                    name = !string.IsNullOrWhiteSpace(entity.PetOwner)
+                        ? entity.PetOwner + "的宠物"
+                        : "怪物 #" + entity.ModelIndex + "（样例外观）";
+                    color = new Color(1f, 0.38f, 0.28f, 1f);
+                }
+                else
+                {
+                    name = !string.IsNullOrWhiteSpace(entity.Name)
+                        ? entity.Name
+                        : "玩家 #" + entity.ObjectId;
+                    color = new Color(0.32f, 0.82f, 1f, 1f);
+                }
+                if (entry.Label.text != name)
+                    entry.Label.text = name;
+                entry.Label.color = color;
+
+                float spriteTop = renderer.sprite != null
+                    ? renderer.sprite.bounds.max.y * Mathf.Abs(renderer.transform.localScale.y)
+                    : 0.76f;
+                entry.Root.localPosition = renderer.transform.localPosition +
+                                           new Vector3(0f, spriteTop + 0.10f, 0f);
+                entry.Canvas.sortingOrder = renderer.sortingOrder + 100;
+            }
+
+            removedEntityLabelIds.Clear();
+            foreach (KeyValuePair<uint, EntityNameLabel> pair in entityNameLabels)
+                if (!seenEntityLabelIds.Contains(pair.Key))
+                    removedEntityLabelIds.Add(pair.Key);
+
+            foreach (uint objectId in removedEntityLabelIds)
+            {
+                if (entityNameLabels.TryGetValue(objectId, out EntityNameLabel entry) && entry.Root != null)
+                    Destroy(entry.Root.gameObject);
+                entityNameLabels.Remove(objectId);
+            }
+        }
+
+        private EntityNameLabel CreateEntityNameLabel(uint objectId, SpriteRenderer renderer)
+        {
+            var rootObject = new GameObject("EntityName_" + objectId, typeof(RectTransform), typeof(Canvas));
+            rootObject.layer = renderer.gameObject.layer;
+            RectTransform root = rootObject.GetComponent<RectTransform>();
+            root.SetParent(worldRenderer.transform, false);
+            root.sizeDelta = new Vector2(260f, 54f);
+            root.localScale = Vector3.one * 0.003f;
+
+            Canvas canvas = rootObject.GetComponent<Canvas>();
+            canvas.renderMode = RenderMode.WorldSpace;
+            canvas.overrideSorting = true;
+
+            var textObject = new GameObject("Text", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+            textObject.layer = renderer.gameObject.layer;
+            RectTransform textRect = textObject.GetComponent<RectTransform>();
+            textRect.SetParent(root, false);
+            textRect.anchorMin = Vector2.zero;
+            textRect.anchorMax = Vector2.one;
+            textRect.offsetMin = Vector2.zero;
+            textRect.offsetMax = Vector2.zero;
+
+            TextMeshProUGUI label = textObject.GetComponent<TextMeshProUGUI>();
+            if (statusText != null && statusText.font != null)
+                label.font = statusText.font;
+            label.fontSize = 28f;
+            label.alignment = TextAlignmentOptions.Center;
+            label.color = Color.white;
+            label.enableWordWrapping = false;
+            label.overflowMode = TextOverflowModes.Overflow;
+            label.raycastTarget = false;
+            label.outlineColor = new Color32(0, 0, 0, 235);
+            label.outlineWidth = 0.18f;
+            return new EntityNameLabel(root, canvas, label);
         }
 
         private void RefreshStatus()
@@ -174,8 +273,22 @@ namespace Zircon.Mobile.Game.World
             string mapName = map?.Description ?? ("地图 " + snapshot.MapIndex);
             string npc = npcCount == 0
                 ? "附近NPC：无"
-                : "附近NPC：" + npcCount + "（金色NPC标记）";
+                : "附近NPC：" + npcCount + "（青绿色名称）";
             statusText.text = mapName + "   坐标：" + snapshot.Location.X + "," + snapshot.Location.Y + "   " + npc;
+        }
+
+        private sealed class EntityNameLabel
+        {
+            public EntityNameLabel(RectTransform root, Canvas canvas, TextMeshProUGUI label)
+            {
+                Root = root;
+                Canvas = canvas;
+                Label = label;
+            }
+
+            public RectTransform Root { get; }
+            public Canvas Canvas { get; }
+            public TextMeshProUGUI Label { get; }
         }
 
     }

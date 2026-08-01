@@ -17,8 +17,16 @@ $env:NUGET_PACKAGES = Join-Path $root ".tools\nuget"
 $env:DOTNET_SKIP_FIRST_TIME_EXPERIENCE = "1"
 $env:DOTNET_CLI_TELEMETRY_OPTOUT = "1"
 
-& $dotnet build "tools\Zircon.ProtocolProbe\Zircon.ProtocolProbe.csproj" -c $Configuration -v:minimal
-& $dotnet build "tools\Zircon.AssetPipeline\Zircon.AssetPipeline.csproj" -c $Configuration -v:minimal
-& $dotnet run --project "tools\Zircon.ProtocolTests\Zircon.ProtocolTests.csproj" -c $Configuration
-& $dotnet build "tools\Zircon.UnityUiCompileCheck\Zircon.UnityUiCompileCheck.csproj" -c $Configuration -v:minimal
+function Invoke-DotNetStep {
+    param([string[]]$Arguments)
 
+    & $dotnet @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "dotnet failed with exit code ${LASTEXITCODE}: $($Arguments -join ' ')"
+    }
+}
+
+Invoke-DotNetStep -Arguments @("build", "tools\Zircon.ProtocolProbe\Zircon.ProtocolProbe.csproj", "-c", $Configuration, "-v:minimal")
+Invoke-DotNetStep -Arguments @("build", "tools\Zircon.AssetPipeline\Zircon.AssetPipeline.csproj", "-c", $Configuration, "-v:minimal")
+Invoke-DotNetStep -Arguments @("run", "--project", "tools\Zircon.ProtocolTests\Zircon.ProtocolTests.csproj", "-c", $Configuration)
+Invoke-DotNetStep -Arguments @("build", "tools\Zircon.UnityUiCompileCheck\Zircon.UnityUiCompileCheck.csproj", "-c", $Configuration, "-v:minimal")

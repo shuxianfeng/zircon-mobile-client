@@ -11,6 +11,7 @@ using Zircon.Mobile.UI.Login;
 namespace Zircon.Mobile.Game.World
 {
     /// <summary>Plays production-sample monster animation, spell effects, shadows and combat audio.</summary>
+    [DefaultExecutionOrder(1000)]
     public sealed class ZirconProductionEntityPresentationBehaviour : MonoBehaviour
     {
         private static ZirconProductionEntityPresentationBehaviour instance;
@@ -18,6 +19,7 @@ namespace Zircon.Mobile.Game.World
         private const int MonsterFramesPerModel = 4;
         private const int EffectFrames = 16;
         private const float PixelsPerUnit = 100f;
+        private const float MonsterTargetHeight = 0.72f;
         private const bool EnableProceduralAudioFallback = false;
 
         private readonly Sprite[,] monsterSprites = new Sprite[MonsterModels, MonsterFramesPerModel];
@@ -65,7 +67,7 @@ namespace Zircon.Mobile.Game.World
             Debug.Log("P2 local skill effect preview started");
         }
 
-        private void Update()
+        private void LateUpdate()
         {
             if (session == null || worldRenderer == null)
                 return;
@@ -198,7 +200,12 @@ namespace Zircon.Mobile.Game.World
                 int model = entity.ModelIndex;
                 float fps = entity.Action == ZirconMirAction.Moving || entity.Action == ZirconMirAction.Attack ? 7f : 4f;
                 int frame = Mathf.FloorToInt(Time.time * fps + entity.ObjectId % 17u) % MonsterFramesPerModel;
-                presentation.Body.sprite = monsterSprites[model, frame];
+                Sprite bodySprite = monsterSprites[model, frame];
+                presentation.Body.sprite = bodySprite;
+                float spriteHeight = bodySprite != null ? bodySprite.bounds.size.y : 0f;
+                presentation.Body.transform.localScale = spriteHeight > 0.001f
+                    ? Vector3.one * (MonsterTargetHeight / spriteHeight)
+                    : Vector3.one;
                 Vector2 offset = monsterOffsets[model, frame];
                 presentation.Body.transform.localPosition = new Vector3(offset.x / PixelsPerUnit, -offset.y / PixelsPerUnit, 0f);
                 presentation.Body.flipX = entity.Direction >= 5;

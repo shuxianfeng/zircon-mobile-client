@@ -3,7 +3,7 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>disable</Nullable>
-    <NoWarn>CS0649</NoWarn>
+    <NoWarn>CS0649;CS0436</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Zircon.ProtocolTests\Zircon.ProtocolTests.csproj" />

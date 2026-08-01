@@ -23,10 +23,14 @@ namespace Zircon.Mobile.UI.Buffs
         {
             if (Time.unscaledTime < nextRefresh)
                 return;
-            nextRefresh = Time.unscaledTime + 0.2f;
+            nextRefresh = Time.unscaledTime + 1f;
 
             ZirconWorldSnapshot snapshot = session?.GetWorldSnapshot();
-            IReadOnlyList<ZirconBuffState> buffs = snapshot?.Buffs ?? Array.Empty<ZirconBuffState>();
+            if (snapshot == null)
+                return;
+
+            var buffs = new List<ZirconBuffState>(snapshot.Buffs ?? Array.Empty<ZirconBuffState>());
+            buffs.Sort((left, right) => left.Index.CompareTo(right.Index));
             EnsureEntryCount(buffs.Count);
             for (int i = 0; i < entries.Count; i++)
             {
@@ -34,7 +38,11 @@ namespace Zircon.Mobile.UI.Buffs
                 Entry entry = entries[i];
                 entry.Buff = buff;
                 if (entry.Label != null)
-                    entry.Label.text = $"{BuffName(buff.Type)}\n{FormatTime(buff.RemainingTime, buff.Paused)}";
+                {
+                    string label = $"{BuffName(buff.Type)}\n{FormatTime(buff.RemainingTime, buff.Paused)}";
+                    if (entry.Label.text != label)
+                        entry.Label.text = label;
+                }
             }
         }
 
@@ -74,8 +82,10 @@ namespace Zircon.Mobile.UI.Buffs
 
         private static string FormatTime(TimeSpan time, bool paused)
         {
+            if (time == TimeSpan.MaxValue || time.TotalDays >= 3650)
+                return "永久";
             if (time <= TimeSpan.Zero)
-                return paused ? "Paused" : string.Empty;
+                return paused ? "暂停" : string.Empty;
             if (time.TotalHours >= 1)
                 return $"{(int)time.TotalHours}:{time.Minutes:00}";
             return $"{(int)time.TotalMinutes}:{time.Seconds:00}";

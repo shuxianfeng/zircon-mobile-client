@@ -16,6 +16,11 @@ namespace Zircon.Mobile.Game.World
         public int ViewWidth;
         public int ViewHeight;
         public List<ZirconMapCellManifest> SampleCells;
+        // Runtime chunks keep floor/collision cells in SampleCells and can
+        // provide a wider object-anchor envelope here. Tall 48xN map strips
+        // extend upward from their owning cell, so their anchors may sit below
+        // the logical floor chunk while pixels are still visible on screen.
+        public List<ZirconMapCellManifest> ObjectCells;
     }
 
     [Serializable]

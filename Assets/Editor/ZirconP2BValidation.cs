@@ -164,6 +164,7 @@ namespace Zircon.Mobile.Editor
             var values = new List<int>();
             Add(values, 0, 4);
             Add(values, 80, 6);
+            Add(values, 160, 6);
             Add(values, 480, 2);
             Add(values, 560, 5);
             Add(values, 640, 5);

@@ -19,9 +19,14 @@ namespace Zircon.Mobile.Game.Input
         [SerializeField] private RectTransform knob;
         [SerializeField] private float deadZonePixels = 18f;
         [SerializeField] private float knobRadiusPixels = 54f;
-        [SerializeField] private float repeatSeconds = 0.50f;
+        // Mobile movement defaults to running once the stick leaves its dead zone.
+        // A positive threshold can still be configured later for an optional
+        // walk/run analogue mode.
+        [SerializeField] private float runThreshold = 0f;
+        [SerializeField] private float repeatSeconds = 0.60f;
 
         private Vector2 direction;
+        private float inputStrength;
         private bool held;
         private float nextMove;
 
@@ -64,6 +69,7 @@ namespace Zircon.Mobile.Game.Input
         {
             held = false;
             direction = Vector2.zero;
+            inputStrength = 0f;
             if (knob != null) knob.anchoredPosition = Vector2.zero;
         }
 
@@ -78,7 +84,12 @@ namespace Zircon.Mobile.Game.Input
             Camera camera = eventData.pressEventCamera;
             if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(pad, eventData.position, camera, out Vector2 local))
                 return;
-            direction = local.magnitude < deadZonePixels ? Vector2.zero : local.normalized;
+            float magnitude = local.magnitude;
+            bool outsideDeadZone = magnitude >= Mathf.Max(0f, deadZonePixels);
+            direction = outsideDeadZone ? local.normalized : Vector2.zero;
+            inputStrength = outsideDeadZone
+                ? Mathf.Clamp01(magnitude / Mathf.Max(1f, knobRadiusPixels))
+                : 0f;
             if (knob != null) knob.anchoredPosition = Vector2.ClampMagnitude(local, knobRadiusPixels);
         }
 
@@ -87,25 +98,44 @@ namespace Zircon.Mobile.Game.Input
             if (direction.sqrMagnitude < 0.01f || session == null || !session.IsInGame || Time.unscaledTime < nextMove)
                 return;
             byte facing = ToMirDirection(direction);
-            ZirconWorldSnapshot snapshot = session.GetWorldSnapshot();
-            if (snapshot == null || !snapshot.HasLocalPlayer)
-                return;
-            Vector2Int delta = DirectionToDelta(facing);
-            Vector2Int origin = new Vector2Int(snapshot.Location.X, snapshot.Location.Y);
-            if (worldRenderer != null &&
-                worldRenderer.TryGetLocalPlayerPlannedCell(out Vector2Int plannedCell))
-                origin = plannedCell;
-            int x = origin.x + delta.x;
-            int y = origin.y + delta.y;
-            if (mapRenderer != null && mapRenderer.IsBlocking(x, y))
+            int requestedDistance = ZirconMovementRules.ResolveRequestedDistance(
+                inputStrength, runThreshold);
+            int moveDistance = ResolveMoveDistance(facing, requestedDistance);
+            if (moveDistance <= 0)
             {
                 nextMove = Time.unscaledTime + Mathf.Max(0.05f, repeatSeconds);
                 return;
             }
-            if (worldRenderer != null && !worldRenderer.TryPredictLocalMove(facing))
+            if (worldRenderer != null &&
+                !worldRenderer.TryPredictLocalMove(facing, moveDistance))
                 return;
             ScheduleNextMove();
-            _ = session.SendMoveCommandAsync(facing, 1);
+            _ = session.SendMoveCommandAsync(facing, moveDistance);
+        }
+
+        private int ResolveMoveDistance(byte facing, int requestedDistance)
+        {
+            ZirconWorldSnapshot snapshot = session?.GetWorldSnapshot();
+            if (snapshot == null || !snapshot.HasLocalPlayer)
+                return requestedDistance;
+            Vector2Int origin = new Vector2Int(snapshot.Location.X, snapshot.Location.Y);
+            if (worldRenderer != null &&
+                worldRenderer.TryGetLocalPlayerPlannedCell(out Vector2Int plannedCell))
+                origin = plannedCell;
+            Vector2Int delta = DirectionToDelta(facing);
+            return ZirconMovementRules.ResolveTraversableDistance(
+                requestedDistance,
+                step =>
+                {
+                    int x = origin.x + delta.x * step;
+                    int y = origin.y + delta.y * step;
+                    return (mapRenderer != null && mapRenderer.IsBlocking(x, y)) ||
+                           ZirconMovementRules.IsOccupiedByBlockingEntity(
+                               snapshot.Entities,
+                               snapshot.LocalPlayer.ObjectId,
+                               x,
+                               y);
+                });
         }
 
         private void ScheduleNextMove()

@@ -1,11 +1,26 @@
+using System.Collections;
+using System.Reflection;
 using System.Text;
+using UnityEngine;
 using Zircon.Mobile.Core.Protocol;
+using Zircon.Mobile.Game.Buffs;
+using Zircon.Mobile.Game.Commerce;
+using Zircon.Mobile.Game.Entities;
+using Zircon.Mobile.Game.Input;
+using Zircon.Mobile.Game.Items;
+using Zircon.Mobile.Game.Quests;
+using Zircon.Mobile.Game.Skills;
+using Zircon.Mobile.Game.Social;
 using Zircon.Mobile.Game.World;
 
 internal static class Program
 {
     private static int Main()
     {
+        TestMovementRules();
+        TestMovePacketsAndWorldDistance();
+        TestTwoCellPredictionConfirmation();
+        TestPredictionCorrectionDoesNotIdleGlide();
         TestClientMagic();
         TestSkillKeyAndStorageCommands();
         TestNpcServicePackets();
@@ -22,9 +37,315 @@ internal static class Program
         TestWorldInventoryAndBuffState();
         TestClientChat();
         TestMapTransitionPackets();
-        Console.WriteLine("protocol tests passed=16");
+        Console.WriteLine("protocol tests passed=20");
         return 0;
     }
+
+    private static void TestMovementRules()
+    {
+        Equal(2, ZirconMovementRules.ResolveRequestedDistance(1f, 0.85f),
+            "full-strength joystick requests running");
+        Equal(2, ZirconMovementRules.ResolveRequestedDistance(0.85f, 0.85f),
+            "run threshold is inclusive");
+        Equal(1, ZirconMovementRules.ResolveRequestedDistance(0.849f, 0.85f),
+            "sub-threshold joystick requests walking");
+        Equal(2, ZirconMovementRules.ResolveRequestedDistance(0.01f, 0f),
+            "default mobile threshold runs whenever outside the dead zone");
+
+        var blockers = new[]
+        {
+            new ZirconEntityState
+            {
+                ObjectId = 1u,
+                Kind = ZirconEntityKind.Player,
+                Location = new ZirconMapPoint(10, 10),
+            },
+            new ZirconEntityState
+            {
+                ObjectId = 2u,
+                Kind = ZirconEntityKind.Monster,
+                Location = new ZirconMapPoint(12, 10),
+            },
+            new ZirconEntityState
+            {
+                ObjectId = 3u,
+                Kind = ZirconEntityKind.Item,
+                Location = new ZirconMapPoint(13, 10),
+            },
+        };
+        True(ZirconMovementRules.IsOccupiedByBlockingEntity(blockers, 1u, 12, 10),
+            "living monster blocks local movement prediction");
+        True(!ZirconMovementRules.IsOccupiedByBlockingEntity(blockers, 1u, 10, 10),
+            "local player never blocks its own movement prediction");
+        True(!ZirconMovementRules.IsOccupiedByBlockingEntity(blockers, 1u, 13, 10),
+            "ground items do not block movement prediction");
+
+        var visited = new List<int>();
+        int openDistance = ZirconMovementRules.ResolveTraversableDistance(2, step =>
+        {
+            visited.Add(step);
+            return false;
+        });
+        Equal(2, openDistance, "two open cells preserve running distance");
+        Equal(2, visited.Count, "two-cell run checks both cells");
+        Equal(1, visited[0], "run checks first cell first");
+        Equal(2, visited[1], "run checks second cell second");
+
+        visited.Clear();
+        int secondBlocked = ZirconMovementRules.ResolveTraversableDistance(2, step =>
+        {
+            visited.Add(step);
+            return step == 2;
+        });
+        Equal(1, secondBlocked, "blocked second cell falls back to one-cell walk");
+        Equal(2, visited.Count, "second-cell fallback checks both cells");
+
+        visited.Clear();
+        int firstBlocked = ZirconMovementRules.ResolveTraversableDistance(2, step =>
+        {
+            visited.Add(step);
+            return step == 1;
+        });
+        Equal(0, firstBlocked, "blocked first cell prevents movement");
+        Equal(1, visited.Count, "blocked first cell short-circuits second-cell check");
+    }
+
+    private static void TestMovePacketsAndWorldDistance()
+    {
+        ZirconPacketFrame clientMove = ReadFrame(ZirconClientPackets.Move(3, 2));
+        Equal(ZirconPacketIds.Client.Move, clientMove.PacketId, "Client.Move id");
+        using (BinaryReader reader = PayloadReader(clientMove))
+        {
+            Equal((byte)3, reader.ReadByte(), "Client.Move direction");
+            Equal(2, reader.ReadInt32(), "Client.Move running distance");
+            Equal(reader.BaseStream.Length, reader.BaseStream.Position,
+                "Client.Move payload consumed");
+        }
+
+        TimeSpan slow = TimeSpan.FromMilliseconds(375);
+        byte[] payload = WritePayload(writer =>
+        {
+            writer.Write(901u);
+            writer.Write((byte)3);
+            writer.Write(162);
+            writer.Write(231);
+            writer.Write(2);
+            writer.Write(slow.Ticks);
+        });
+        var frame = new ZirconPacketFrame(
+            payload.Length + 6,
+            ZirconPacketIds.Server.ObjectMove,
+            payload,
+            Array.Empty<byte>());
+
+        True(ZirconInGamePacketDecoder.TryDecodeObjectMove(frame, out ZirconObjectMoveInfo decoded),
+            "ObjectMove decode");
+        Equal(901u, decoded.ObjectId, "ObjectMove object id");
+        Equal((byte)3, decoded.Direction, "ObjectMove direction");
+        Equal(new ZirconMapPoint(162, 231), decoded.Location, "ObjectMove location");
+        Equal(2, decoded.Distance, "ObjectMove distance");
+        Equal(slow, decoded.Slow, "ObjectMove slow");
+
+        var world = new ZirconWorldState();
+        True(world.ApplyPacket(frame, out string summary), "world apply ObjectMove");
+        True(summary.Contains("distance=2", StringComparison.Ordinal),
+            "ObjectMove summary retains distance");
+        ZirconWorldSnapshot snapshot = world.GetSnapshot();
+        var entity = snapshot.Entities.Single(value => value.ObjectId == 901u);
+        Equal(2, entity.MoveDistance, "world snapshot retains ObjectMove distance");
+        Equal(slow, entity.MoveSlow, "world snapshot retains ObjectMove slow");
+    }
+
+    private static void TestTwoCellPredictionConfirmation()
+    {
+        Time.time = 10f;
+        Time.unscaledTime = 10f;
+        var player = new ZirconEntityState
+        {
+            ObjectId = 77u,
+            Kind = ZirconEntityKind.Player,
+            MapIndex = 1,
+            Location = new ZirconMapPoint(10, 10),
+            Direction = 2,
+            PositionSequence = 1,
+        };
+        var renderer = new ZirconWorldDebugRenderer();
+        renderer.Render(CreateMovementSnapshot(player));
+
+        True(renderer.TryPredictLocalMove(2, 2), "two-cell local prediction accepted");
+        True(renderer.TryGetLocalPlayerPlannedCell(out Vector2Int predicted),
+            "two-cell local prediction exposes planned cell");
+        Equal(new Vector2Int(12, 10), predicted,
+            "two-cell prediction reaches run destination");
+        True(renderer.TryGetVisualMoveDistance(77u, out int visualDistance),
+            "two-cell prediction exposes visual distance");
+        Equal(2, visualDistance, "two-cell prediction preserves visual distance");
+        Near(0.60f, GetMovementDuration(renderer, 77u), 0.001f,
+            "two-cell run uses one action duration");
+
+        ZirconEntityState confirmed = player.Clone();
+        confirmed.Location = new ZirconMapPoint(12, 10);
+        confirmed.Direction = 2;
+        confirmed.PositionSequence = 2;
+        confirmed.MoveDistance = 2;
+        renderer.Render(CreateMovementSnapshot(confirmed));
+
+        True(renderer.TryGetLocalPlayerPlannedCell(out Vector2Int plannedAfterConfirm),
+            "confirmed run retains planned cell");
+        Equal(new Vector2Int(12, 10), plannedAfterConfirm,
+            "authoritative run destination confirms two-cell prediction");
+        Equal(0, GetUnconfirmedPredictionCount(renderer, 77u),
+            "authoritative run destination clears pending prediction");
+        True(renderer.TryPredictLocalMove(2, 2),
+            "renderer accepts another run after two-cell confirmation");
+    }
+
+    private static void TestPredictionCorrectionDoesNotIdleGlide()
+    {
+        Time.time = 20f;
+        Time.unscaledTime = 20f;
+        var player = new ZirconEntityState
+        {
+            ObjectId = 88u,
+            Kind = ZirconEntityKind.Player,
+            MapIndex = 1,
+            Location = new ZirconMapPoint(10, 10),
+            Direction = 2,
+            PositionSequence = 1,
+        };
+        var renderer = new ZirconWorldDebugRenderer();
+        renderer.Render(CreateMovementSnapshot(player));
+        True(renderer.TryPredictLocalMove(2, 2),
+            "prediction correction test accepts run");
+
+        Time.time = 20.60f;
+        Time.unscaledTime = 20.60f;
+        InvokeRendererLateUpdate(renderer);
+        True(renderer.TryGetEntityRenderer(88u, out SpriteRenderer marker),
+            "prediction correction test exposes marker");
+        Near(12f * renderer.TileScale, marker.transform.localPosition.x, 0.001f,
+            "prediction reaches visual destination");
+
+        Time.time = 21.30f;
+        Time.unscaledTime = 21.30f;
+        InvokeRendererLateUpdate(renderer);
+        Near(10f * renderer.TileScale, marker.transform.localPosition.x, 0.001f,
+            "timed-out prediction snaps to authoritative cell");
+        True(!renderer.IsObjectMoving(88u),
+            "timed-out correction never presents as idle movement");
+
+        Time.time = 30f;
+        Time.unscaledTime = 30f;
+        renderer = new ZirconWorldDebugRenderer();
+        renderer.Render(CreateMovementSnapshot(player));
+        True(renderer.TryPredictLocalMove(2, 2),
+            "rejected prediction test accepts run");
+        Time.time = 30.60f;
+        Time.unscaledTime = 30.60f;
+        InvokeRendererLateUpdate(renderer);
+
+        ZirconEntityState corrected = player.Clone();
+        corrected.Location = new ZirconMapPoint(11, 10);
+        corrected.Direction = 2;
+        corrected.PositionSequence = 2;
+        corrected.MoveDistance = 1;
+        renderer.Render(CreateMovementSnapshot(corrected));
+        True(renderer.TryGetEntityRenderer(88u, out marker),
+            "rejected prediction marker remains available");
+        Near(11f * renderer.TileScale, marker.transform.localPosition.x, 0.001f,
+            "unexpected authoritative cell snaps without gliding");
+        True(!renderer.IsObjectMoving(88u),
+            "unexpected authoritative correction remains visually idle");
+    }
+
+    private static void InvokeRendererLateUpdate(ZirconWorldDebugRenderer renderer)
+    {
+        MethodInfo lateUpdate = typeof(ZirconWorldDebugRenderer).GetMethod(
+            "LateUpdate",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        True(lateUpdate != null, "renderer LateUpdate is available");
+        lateUpdate.Invoke(renderer, null);
+    }
+
+    private static int GetUnconfirmedPredictionCount(
+        ZirconWorldDebugRenderer renderer,
+        uint objectId)
+    {
+        object movement = GetMovementState(renderer, objectId);
+        FieldInfo unconfirmedField = movement.GetType().GetField(
+            "Unconfirmed",
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        True(unconfirmedField != null, "unconfirmed prediction list is available");
+        var unconfirmed = unconfirmedField.GetValue(movement) as ICollection;
+        True(unconfirmed != null, "unconfirmed prediction list is readable");
+        return unconfirmed.Count;
+    }
+
+    private static float GetMovementDuration(
+        ZirconWorldDebugRenderer renderer,
+        uint objectId)
+    {
+        object movement = GetMovementState(renderer, objectId);
+        FieldInfo durationField = movement.GetType().GetField(
+            "Duration",
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        True(durationField != null, "movement duration is available");
+        return (float)durationField.GetValue(movement);
+    }
+
+    private static object GetMovementState(
+        ZirconWorldDebugRenderer renderer,
+        uint objectId)
+    {
+        FieldInfo movementsField = typeof(ZirconWorldDebugRenderer).GetField(
+            "movementByObjectId",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        True(movementsField != null, "movement state dictionary is available");
+        var movements = movementsField.GetValue(renderer) as IDictionary;
+        True(movements != null && movements.Contains(objectId),
+            "local movement state is available");
+        return movements[objectId];
+    }
+
+    private static ZirconWorldSnapshot CreateMovementSnapshot(ZirconEntityState player)
+    {
+        return new ZirconWorldSnapshot(
+            localPlayer: player,
+            entities: new[] { player },
+            chatMessages: Array.Empty<ZirconChatLogEntry>(),
+            stats: new Dictionary<int, int>(),
+            skills: Array.Empty<ZirconSkillState>(),
+            inventory: Array.Empty<ZirconItemState>(),
+            equipment: Array.Empty<ZirconItemState>(),
+            storage: Array.Empty<ZirconItemState>(),
+            storageSize: 100,
+            buffs: Array.Empty<ZirconBuffState>(),
+            quests: Array.Empty<ZirconQuestState>(),
+            social: new ZirconSocialState(),
+            commerce: new ZirconCommerceState(),
+            mapIndex: player.MapIndex,
+            location: player.Location,
+            hasLocalPlayer: true,
+            bagWeight: 0,
+            wearWeight: 0,
+            handWeight: 0,
+            gold: 0,
+            gameGold: 0,
+            huntGold: 0,
+            autoTime: 0,
+            skillLevelLimit: 0,
+            npcDialogOpen: false,
+            npcObjectId: 0,
+            npcPageIndex: 0);
+    }
+
+    private static void Near(float expected, float actual, float tolerance, string name)
+    {
+        if (MathF.Abs(expected - actual) > tolerance)
+            throw new InvalidOperationException(
+                $"Assertion failed: {name}. expected={expected} actual={actual}");
+    }
+
 
     private static void TestClientMagic()
     {
@@ -277,6 +598,27 @@ internal static class Program
             Equal(3L, reader.ReadInt64(), "NPCBuy amount");
             True(!reader.ReadBoolean(), "NPCBuy personal funds");
         }
+
+        var world = new ZirconWorldState();
+        byte[] responsePayload = WritePayload(writer =>
+        {
+            writer.Write((uint)901);
+            writer.Write(42);
+        });
+        var response = new ZirconPacketFrame(
+            responsePayload.Length + 6,
+            ZirconPacketIds.Server.NpcResponse,
+            responsePayload,
+            Array.Empty<byte>());
+        True(world.ApplyPacket(response, out _), "world apply NPC response");
+        True(world.GetSnapshot().NpcDialogOpen, "NPC response opens dialog");
+        Equal((uint)901, world.GetSnapshot().NpcObjectId, "NPC response object");
+        Equal(42, world.GetSnapshot().NpcPageIndex, "NPC response page");
+
+        world.DismissNpcDialog();
+        True(!world.GetSnapshot().NpcDialogOpen, "local NPC dismissal closes dialog");
+        Equal((uint)0, world.GetSnapshot().NpcObjectId, "local NPC dismissal clears object");
+        Equal(0, world.GetSnapshot().NpcPageIndex, "local NPC dismissal clears page");
     }
 
     private static void TestClientChat()

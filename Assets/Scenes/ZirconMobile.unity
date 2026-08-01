@@ -10544,19 +10544,19 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6831888010057273669, guid: 2a694217ad18c6a4b818b6fd0b82ffde, type: 3}
       propertyPath: m_AnchorMax.x
-      value: 0.8
+      value: 0.79
       objectReference: {fileID: 0}
     - target: {fileID: 6831888010057273669, guid: 2a694217ad18c6a4b818b6fd0b82ffde, type: 3}
       propertyPath: m_AnchorMax.y
-      value: 0.09
+      value: 0.19
       objectReference: {fileID: 0}
     - target: {fileID: 6831888010057273669, guid: 2a694217ad18c6a4b818b6fd0b82ffde, type: 3}
       propertyPath: m_AnchorMin.x
-      value: 0.8
+      value: 0.79
       objectReference: {fileID: 0}
     - target: {fileID: 6831888010057273669, guid: 2a694217ad18c6a4b818b6fd0b82ffde, type: 3}
       propertyPath: m_AnchorMin.y
-      value: 0.09
+      value: 0.19
       objectReference: {fileID: 0}
     - target: {fileID: 6831888010057273669, guid: 2a694217ad18c6a4b818b6fd0b82ffde, type: 3}
       propertyPath: m_SizeDelta.x
@@ -24120,7 +24120,8 @@ MonoBehaviour:
   knob: {fileID: 191386767}
   deadZonePixels: 24
   knobRadiusPixels: 54
-  repeatSeconds: 0.5
+  runThreshold: 0
+  repeatSeconds: 0.6
 --- !u!114 &1530878562
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -29130,7 +29131,7 @@ MonoBehaviour:
   tileScale: 0.32
   tileHeightRatio: 0.6666667
   markerSize: 0.12
-  movementSecondsPerCell: 0.5
+  movementSecondsPerCell: 0.6
   predictionTimeoutSeconds: 1.25
   maxPredictedSteps: 2
   movementGraceSeconds: 0.06

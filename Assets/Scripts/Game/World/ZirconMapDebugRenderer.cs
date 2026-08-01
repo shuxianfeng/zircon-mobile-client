@@ -97,7 +97,15 @@ namespace Zircon.Mobile.Game.World
 
         public bool IsBlocking(int x, int y)
         {
-            return TryGetCell(x, y, out ZirconMapCellManifest cell) && cell.Blocking;
+            if (Manifest == null)
+                return false;
+            if (x < 0 || y < 0 || x >= Manifest.Width || y >= Manifest.Height)
+                return true;
+            // Production maps 5/6 are streamed as moving chunks. A cell that is
+            // temporarily outside the loaded chunk must not be treated as open,
+            // otherwise local prediction runs into it and the server snaps the
+            // player back after rejecting the move.
+            return !TryGetCell(x, y, out ZirconMapCellManifest cell) || cell.Blocking;
         }
 
         public void SetVisibleCellBounds(RectInt bounds)

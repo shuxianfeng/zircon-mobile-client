@@ -27,7 +27,7 @@ namespace Zircon.Mobile.Editor
             root.transform.SetAsFirstSibling();
 
             SetAnchor("Select", new Vector2(.67f, .19f));
-            SetAnchor("Pickup", new Vector2(.77f, .19f));
+            SetAnchor("Pickup", new Vector2(.79f, .19f));
             SetAnchor("Attack", new Vector2(.87f, .19f));
             for (int i = 0; i < 4; i++)
                 SetAnchor("Skill" + (i + 1), new Vector2(.57f + i * .08f, .075f));

@@ -106,7 +106,7 @@ namespace Zircon.Mobile.Editor
 
             Button select = Button("Select", parent, "TARGET", new Vector2(.72f, .19f), new Vector2(150, 58));
             Button attack = Button("Attack", parent, "ATTACK", new Vector2(.88f, .19f), new Vector2(190, 86));
-            Button pickup = Button("Pickup", parent, "PICK", new Vector2(.80f, .09f), new Vector2(140, 56));
+            Button pickup = Button("Pickup", parent, "PICK", new Vector2(.79f, .19f), new Vector2(140, 56));
 
             ZirconTargetCombatBehaviour combat = parent.gameObject.AddComponent<ZirconTargetCombatBehaviour>();
             Set(combat, "protocolProbe", session); Set(combat, "worldRenderer", world); Set(combat, "worldCamera", camera);

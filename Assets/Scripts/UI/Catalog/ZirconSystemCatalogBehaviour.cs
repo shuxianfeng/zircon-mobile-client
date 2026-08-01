@@ -15,6 +15,7 @@ namespace Zircon.Mobile.UI.Catalog
 
         private readonly Dictionary<int, ItemEntry> items = new Dictionary<int, ItemEntry>();
         private readonly Dictionary<int, MagicEntry> magics = new Dictionary<int, MagicEntry>();
+        private readonly Dictionary<int, NpcEntry> npcs = new Dictionary<int, NpcEntry>();
         private readonly Dictionary<int, NpcPageEntry> npcPages = new Dictionary<int, NpcPageEntry>();
         private readonly Dictionary<int, List<NpcGoodEntry>> npcGoods = new Dictionary<int, List<NpcGoodEntry>>();
         private readonly Dictionary<int, QuestEntry> quests = new Dictionary<int, QuestEntry>();
@@ -37,6 +38,7 @@ namespace Zircon.Mobile.UI.Catalog
         public QuestEntry GetQuest(int index) { EnsureLoaded(); quests.TryGetValue(index, out QuestEntry value); return value; }
         public QuestTaskEntry GetQuestTask(int index) { EnsureLoaded(); questTasks.TryGetValue(index, out QuestTaskEntry value); return value; }
         public MapEntry GetMap(int index) { EnsureLoaded(); maps.TryGetValue(index, out MapEntry value); return value; }
+        public NpcEntry GetNpc(int index) { EnsureLoaded(); npcs.TryGetValue(index, out NpcEntry value); return value; }
         public NpcPageEntry GetNpcPage(int index)
         {
             EnsureLoaded();
@@ -94,6 +96,11 @@ namespace Zircon.Mobile.UI.Catalog
                 return;
 
             NpcPageManifest npcManifest = JsonUtility.FromJson<NpcPageManifest>(npcPageManifest.text);
+            if (npcManifest?.Npcs != null)
+            {
+                foreach (NpcEntry npc in npcManifest.Npcs)
+                    npcs[npc.Index] = npc;
+            }
             if (npcManifest?.Pages != null)
             {
                 foreach (NpcPageEntry page in npcManifest.Pages)
@@ -126,7 +133,7 @@ namespace Zircon.Mobile.UI.Catalog
         [Serializable]
         private sealed class MapManifest { public MapEntry[] Maps; }
         [Serializable]
-        private sealed class NpcPageManifest { public NpcPageEntry[] Pages; public NpcGoodEntry[] Goods; }
+        private sealed class NpcPageManifest { public NpcEntry[] Npcs; public NpcPageEntry[] Pages; public NpcGoodEntry[] Goods; }
 
         [Serializable]
         public sealed class ItemEntry
@@ -173,6 +180,16 @@ namespace Zircon.Mobile.UI.Catalog
             public string Say;
             public int SuccessPage;
             public string Arguments;
+        }
+
+        [Serializable]
+        public sealed class NpcEntry
+        {
+            public int Index;
+            public string Name;
+            public int Region;
+            public int Image;
+            public int EntryPage;
         }
 
         [Serializable]

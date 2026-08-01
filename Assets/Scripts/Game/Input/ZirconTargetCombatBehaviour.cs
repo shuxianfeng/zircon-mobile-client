@@ -257,10 +257,19 @@ namespace Zircon.Mobile.Game.Input
                     continue;
 
                 Vector3 entityWorld;
+                bool hasRenderer = worldRenderer.TryGetEntityRenderer(entity.ObjectId, out SpriteRenderer entityRenderer) &&
+                                   entityRenderer != null;
                 if (!worldRenderer.TryGetEntityWorldPosition(entity.ObjectId, out entityWorld))
                     entityWorld = new Vector3(entity.Location.X * worldRenderer.TileScale, -entity.Location.Y * worldRenderer.TileScale, 0f);
 
                 float distance = Vector2.Distance(tapWorld, entityWorld);
+                if (hasRenderer)
+                {
+                    Bounds bounds = entityRenderer.bounds;
+                    bounds.Expand(selectionRadiusWorld * 0.35f);
+                    if (bounds.Contains(new Vector3(tapWorld.x, tapWorld.y, bounds.center.z)))
+                        distance = Vector2.Distance(tapWorld, entityWorld) * 0.01f;
+                }
                 if (distance > bestDistance)
                     continue;
 

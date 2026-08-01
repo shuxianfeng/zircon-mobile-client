@@ -4,12 +4,13 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>disable</Nullable>
-    <NoWarn>CS8632</NoWarn>
+    <NoWarn>CS8632;CS0649</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\..\Assets\Scripts\Core\Protocol\*.cs" LinkBase="Core\Protocol" />
     <Compile Include="..\..\Assets\Scripts\Game\Entities\ZirconEntityKind.cs" LinkBase="Game\Entities" />
     <Compile Include="..\..\Assets\Scripts\Game\Entities\ZirconEntityState.cs" LinkBase="Game\Entities" />
+    <Compile Include="..\..\Assets\Scripts\Game\Input\ZirconMovementRules.cs" LinkBase="Game\Input" />
     <Compile Include="..\..\Assets\Scripts\Game\Skills\ZirconSkillState.cs" LinkBase="Game\Skills" />
     <Compile Include="..\..\Assets\Scripts\Game\Quests\ZirconQuestState.cs" LinkBase="Game\Quests" />
     <Compile Include="..\..\Assets\Scripts\Game\Social\ZirconSocialState.cs" LinkBase="Game\Social" />
@@ -19,5 +20,6 @@
     <Compile Include="..\..\Assets\Scripts\Game\World\ZirconChatLogEntry.cs" LinkBase="Game\World" />
     <Compile Include="..\..\Assets\Scripts\Game\World\ZirconWorldSnapshot.cs" LinkBase="Game\World" />
     <Compile Include="..\..\Assets\Scripts\Game\World\ZirconWorldState.cs" LinkBase="Game\World" />
+    <Compile Include="..\..\Assets\Scripts\Game\World\ZirconWorldDebugRenderer.cs" LinkBase="Game\World" />
   </ItemGroup>
 </Project>

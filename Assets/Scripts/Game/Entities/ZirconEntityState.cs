@@ -14,6 +14,8 @@ namespace Zircon.Mobile.Game.Entities
         public ZirconMapPoint Location { get; set; }
         public byte Direction { get; set; }
         public ZirconMirAction Action { get; set; }
+        public int MoveDistance { get; set; }
+        public TimeSpan MoveSlow { get; set; }
         public int ActionMagic { get; set; }
         public uint ActionTargetId { get; set; }
         public long ActionSequence { get; set; }
@@ -40,6 +42,8 @@ namespace Zircon.Mobile.Game.Entities
                 Location = Location,
                 Direction = Direction,
                 Action = Action,
+                MoveDistance = MoveDistance,
+                MoveSlow = MoveSlow,
                 ActionMagic = ActionMagic,
                 ActionTargetId = ActionTargetId,
                 ActionSequence = ActionSequence,

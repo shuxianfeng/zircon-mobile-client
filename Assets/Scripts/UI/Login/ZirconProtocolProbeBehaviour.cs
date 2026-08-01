@@ -415,6 +415,7 @@ namespace Zircon.Mobile.UI.Login
             if (!CanSendInGameAction())
                 return;
 
+            worldState.DismissNpcDialog();
             try
             {
                 await client.SendNpcCallAsync(objectId, cts.Token);
@@ -626,6 +627,7 @@ namespace Zircon.Mobile.UI.Login
         {
             if (!CanSendInGameAction())
                 return;
+            worldState.DismissNpcDialog();
             try
             {
                 await client.SendNpcCloseAsync(cts.Token);

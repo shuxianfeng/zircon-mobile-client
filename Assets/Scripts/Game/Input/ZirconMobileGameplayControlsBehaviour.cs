@@ -18,10 +18,12 @@ namespace Zircon.Mobile.Game.Input
         [SerializeField] private RectTransform knob;
         [SerializeField] private float deadZonePixels = 24f;
         [SerializeField] private float knobRadiusPixels = 54f;
-        [SerializeField] private float repeatSeconds = 0.50f;
+        [SerializeField] private float runThreshold = 0f;
+        [SerializeField] private float repeatSeconds = 0.60f;
 
         private Vector2 origin;
         private Vector2 direction;
+        private float inputStrength;
         private bool dragging;
         private float nextMoveTime;
 
@@ -58,13 +60,20 @@ namespace Zircon.Mobile.Game.Input
                 return;
 
             byte facing = ToMirDirection(direction);
-            if (!CanMoveTo(facing))
+            int requestedDistance = ZirconMovementRules.ResolveRequestedDistance(
+                inputStrength, runThreshold);
+            int moveDistance = ResolveMoveDistance(facing, requestedDistance);
+            if (moveDistance <= 0)
+            {
+                ScheduleNextMove();
                 return;
-            if (worldRenderer != null && !worldRenderer.TryPredictLocalMove(facing))
+            }
+            if (worldRenderer != null &&
+                !worldRenderer.TryPredictLocalMove(facing, moveDistance))
                 return;
 
             ScheduleNextMove();
-            _ = session.SendMoveCommandAsync(facing, 1);
+            _ = session.SendMoveCommandAsync(facing, moveDistance);
         }
 
         public void OnPointerDown(PointerEventData eventData)
@@ -83,7 +92,12 @@ namespace Zircon.Mobile.Game.Input
         private void UpdatePad(Vector2 position)
         {
             Vector2 delta = position - origin;
-            direction = delta.magnitude < deadZonePixels ? Vector2.zero : delta.normalized;
+            float magnitude = delta.magnitude;
+            bool outsideDeadZone = magnitude >= Mathf.Max(0f, deadZonePixels);
+            direction = outsideDeadZone ? delta.normalized : Vector2.zero;
+            inputStrength = outsideDeadZone
+                ? Mathf.Clamp01(magnitude / Mathf.Max(1f, knobRadiusPixels))
+                : 0f;
             if (knob != null)
                 knob.anchoredPosition = Vector2.ClampMagnitude(delta, knobRadiusPixels);
         }
@@ -92,6 +106,7 @@ namespace Zircon.Mobile.Game.Input
         {
             dragging = false;
             direction = Vector2.zero;
+            inputStrength = 0f;
             if (knob != null)
                 knob.anchoredPosition = Vector2.zero;
         }
@@ -106,19 +121,29 @@ namespace Zircon.Mobile.Game.Input
         private void Attack() { if (combat != null) _ = combat.AttackSelectedTargetAsync(); }
         private void Pickup() { if (combat != null) _ = combat.PickUpNearbyAsync(); }
 
-        private bool CanMoveTo(byte facing)
+        private int ResolveMoveDistance(byte facing, int requestedDistance)
         {
-            if (mapRenderer == null)
-                return true;
             ZirconWorldSnapshot snapshot = session?.GetWorldSnapshot();
             if (snapshot == null || !snapshot.HasLocalPlayer)
-                return true;
+                return requestedDistance;
             Vector2Int originCell = new Vector2Int(snapshot.Location.X, snapshot.Location.Y);
             if (worldRenderer != null &&
                 worldRenderer.TryGetLocalPlayerPlannedCell(out Vector2Int plannedCell))
                 originCell = plannedCell;
             Vector2Int delta = DirectionToDelta(facing);
-            return !mapRenderer.IsBlocking(originCell.x + delta.x, originCell.y + delta.y);
+            return ZirconMovementRules.ResolveTraversableDistance(
+                requestedDistance,
+                step =>
+                {
+                    int x = originCell.x + delta.x * step;
+                    int y = originCell.y + delta.y * step;
+                    return (mapRenderer != null && mapRenderer.IsBlocking(x, y)) ||
+                           ZirconMovementRules.IsOccupiedByBlockingEntity(
+                               snapshot.Entities,
+                               snapshot.LocalPlayer.ObjectId,
+                               x,
+                               y);
+                });
         }
 
         private static byte ToMirDirection(Vector2 value)

@@ -253,6 +253,18 @@ namespace Zircon.Mobile.Game.World
                 return true;
             }
         }
+
+        public void DismissNpcDialog()
+        {
+            lock (syncRoot)
+            {
+                npcDialogOpen = false;
+                npcObjectId = 0;
+                npcPageIndex = 0;
+                snapshotDirty = true;
+            }
+        }
+
         public ZirconWorldSnapshot GetSnapshot()
         {
             lock (syncRoot)
@@ -370,6 +382,9 @@ namespace Zircon.Mobile.Game.World
                 localPlayer.MapIndex = info.MapIndex;
                 localPlayer.Location = info.Location;
                 localPlayer.Direction = info.Direction;
+                localPlayer.Action = ZirconMirAction.Standing;
+                localPlayer.MoveDistance = 0;
+                localPlayer.MoveSlow = TimeSpan.Zero;
                 localPlayer.Level = info.Level;
                 localPlayer.Health = info.CurrentHp;
                 localPlayer.Mana = info.CurrentMp;
@@ -412,7 +427,11 @@ namespace Zircon.Mobile.Game.World
             {
                 mapIndex = changed.MapIndex;
                 if (localPlayer != null)
+                {
                     localPlayer.MapIndex = changed.MapIndex;
+                    localPlayer.MoveDistance = 0;
+                    localPlayer.MoveSlow = TimeSpan.Zero;
+                }
 
                 var removeIds = new List<uint>();
                 foreach (KeyValuePair<uint, ZirconEntityState> pair in entities)
@@ -439,6 +458,8 @@ namespace Zircon.Mobile.Game.World
                     localPlayer.Location = update.Location;
                     localPlayer.PositionSequence++;
                     localPlayer.Direction = update.Direction;
+                    localPlayer.MoveDistance = 0;
+                    localPlayer.MoveSlow = TimeSpan.Zero;
                     localPlayer.LastUpdatedUtc = DateTime.UtcNow;
                 }
             }
@@ -456,6 +477,8 @@ namespace Zircon.Mobile.Game.World
                 entity.MapIndex = player.MapIndex;
                 entity.Location = player.Location;
                 entity.PositionSequence++;
+                entity.MoveDistance = 0;
+                entity.MoveSlow = TimeSpan.Zero;
                 entity.Health = player.Health;
                 entity.Mana = player.Mana;
                 entity.MaxHealth = player.MaxHealth;
@@ -575,6 +598,8 @@ namespace Zircon.Mobile.Game.World
                 entity.PositionSequence++;
                 entity.Direction = attack.Direction;
                 entity.Action = ZirconMirAction.Attack;
+                entity.MoveDistance = 0;
+                entity.MoveSlow = TimeSpan.Zero;
                 entity.ActionMagic = attack.AttackMagic;
                 entity.ActionTargetId = attack.TargetId;
                 entity.ActionSequence++;
@@ -594,6 +619,8 @@ namespace Zircon.Mobile.Game.World
                 entity.PositionSequence++;
                 entity.Direction = magic.Direction;
                 entity.Action = ZirconMirAction.Spell;
+                entity.MoveDistance = 0;
+                entity.MoveSlow = TimeSpan.Zero;
                 entity.ActionMagic = magic.MagicType;
                 entity.ActionTargetId = magic.Targets.Count > 0 ? magic.Targets[0] : 0;
                 entity.ActionSequence++;
@@ -650,6 +677,8 @@ namespace Zircon.Mobile.Game.World
                 entity.PositionSequence++;
                 entity.Direction = move.Direction;
                 entity.Action = ZirconMirAction.Moving;
+                entity.MoveDistance = Math.Max(0, move.Distance);
+                entity.MoveSlow = move.Slow;
                 entity.LastUpdatedUtc = DateTime.UtcNow;
                 UpdateLocalIfMatching(entity);
             }
@@ -667,6 +696,8 @@ namespace Zircon.Mobile.Game.World
                 entity.PositionSequence++;
                 entity.Direction = turn.Direction;
                 entity.Action = ZirconMirAction.Standing;
+                entity.MoveDistance = 0;
+                entity.MoveSlow = TimeSpan.Zero;
                 entity.LastUpdatedUtc = DateTime.UtcNow;
                 UpdateLocalIfMatching(entity);
             }
@@ -683,6 +714,8 @@ namespace Zircon.Mobile.Game.World
                 entity.MapIndex = objectLocation.MapIndex;
                 entity.Location = objectLocation.Location;
                 entity.PositionSequence++;
+                entity.MoveDistance = 0;
+                entity.MoveSlow = TimeSpan.Zero;
                 entity.LastUpdatedUtc = DateTime.UtcNow;
                 UpdateLocalIfMatching(entity);
             }

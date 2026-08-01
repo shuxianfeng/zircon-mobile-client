@@ -16,13 +16,19 @@ namespace Zircon.Mobile.Game.World
     {
         [SerializeField] private ZirconProtocolProbeBehaviour session;
         [SerializeField] private ZirconMapDebugRenderer mapRenderer;
+        [SerializeField] private ZirconMapOneObjectLayersBehaviour objectLayers;
         [SerializeField] private int chunkSize = 96;
         [SerializeField] private int reloadMargin = 24;
+        [SerializeField] private int predictedStepAllowance = 2;
+        [SerializeField] private int objectAnchorPaddingCells = 2;
+        [SerializeField] private int objectHeightPaddingCells = 24;
         private bool loading;
         private int loadedMapIndex = -1;
         private int loadedMapWidth;
         private int loadedMapHeight;
         private RectInt loadedView;
+        private int stagedFloorMapIndex = -1;
+        private readonly HashSet<string> stagedFloorTiles = new HashSet<string>();
         private readonly Dictionary<int, ZirconMapManifest> sourceManifests =
             new Dictionary<int, ZirconMapManifest>();
 
@@ -38,6 +44,12 @@ namespace Zircon.Mobile.Game.World
             public int MapIndex { get; }
             public string Manifest { get; }
             public string TextureSourceRoot { get; }
+        }
+
+        private void Awake()
+        {
+            if (objectLayers == null)
+                objectLayers = GetComponent<ZirconMapOneObjectLayersBehaviour>();
         }
 
         private void Update()
@@ -60,10 +72,30 @@ namespace Zircon.Mobile.Game.World
                 return false;
             int right = loadedView.xMax;
             int bottom = loadedView.yMax;
-            return (loadedView.x > 0 && snapshot.Location.X < loadedView.x + reloadMargin) ||
-                   (right < loadedMapWidth && snapshot.Location.X >= right - reloadMargin) ||
-                   (loadedView.y > 0 && snapshot.Location.Y < loadedView.y + reloadMargin) ||
-                   (bottom < loadedMapHeight && snapshot.Location.Y >= bottom - reloadMargin);
+            int marginX = GetReloadMargin(loadedView.width, GetVisibleRadiusX());
+            int marginY = GetReloadMargin(loadedView.height, GetVisibleRadiusY());
+            return (loadedView.x > 0 && snapshot.Location.X < loadedView.x + marginX) ||
+                   (right < loadedMapWidth && snapshot.Location.X >= right - marginX) ||
+                   (loadedView.y > 0 && snapshot.Location.Y < loadedView.y + marginY) ||
+                   (bottom < loadedMapHeight && snapshot.Location.Y >= bottom - marginY);
+        }
+
+        private int GetReloadMargin(int extent, int visibleRadius)
+        {
+            int configured = reloadMargin > 0 ? reloadMargin : 24;
+            int predicted = predictedStepAllowance > 0 ? predictedStepAllowance : 2;
+            int requested = Mathf.Max(configured, visibleRadius + predicted);
+            return Mathf.Min(requested, Mathf.Max(1, extent / 2 - 1));
+        }
+
+        private int GetVisibleRadiusX()
+        {
+            return objectLayers != null ? objectLayers.EffectiveVisibleRadiusX : 30;
+        }
+
+        private int GetVisibleRadiusY()
+        {
+            return objectLayers != null ? objectLayers.EffectiveVisibleRadiusY : 28;
         }
 
         private IEnumerator LoadMap(MapDefinition definition, int centerX, int centerY)
@@ -112,7 +144,13 @@ namespace Zircon.Mobile.Game.World
 
             string visualRoot = Path.Combine(Application.persistentDataPath, "Zircon", "RuntimeVisuals");
             string textureRoot = Path.Combine(visualRoot, "Generated", "Textures", "MapData");
+            if (stagedFloorMapIndex != definition.MapIndex)
+            {
+                stagedFloorMapIndex = definition.MapIndex;
+                stagedFloorTiles.Clear();
+            }
             int copied = 0;
+            int reused = 0;
             foreach (string tile in tiles)
             {
                 string[] parts = tile.Split(':');
@@ -123,6 +161,12 @@ namespace Zircon.Mobile.Game.World
                 string runtimeFile = folder + "_" + index.ToString("D5") + "_image.png";
                 string source = "Generated/Textures/MapData/" +
                                 definition.TextureSourceRoot + folder + "/" + sourceFile;
+                string destination = Path.Combine(textureRoot, folder, runtimeFile);
+                if (stagedFloorTiles.Contains(destination) && File.Exists(destination))
+                {
+                    reused++;
+                    continue;
+                }
                 byte[] bytes = null;
                 yield return ZirconAssetStore.LoadBytes(source,
                     value => bytes = value,
@@ -130,9 +174,9 @@ namespace Zircon.Mobile.Game.World
                                               definition.MapIndex + " file=" + sourceFile + ": " + value));
                 if (bytes == null || bytes.Length == 0)
                     continue;
-                string destination = Path.Combine(textureRoot, folder, runtimeFile);
                 Directory.CreateDirectory(Path.GetDirectoryName(destination));
                 File.WriteAllBytes(destination, bytes);
+                stagedFloorTiles.Add(destination);
                 copied++;
             }
 
@@ -152,21 +196,42 @@ namespace Zircon.Mobile.Game.World
                       " source=" + manifest.Source +
                       " view=" + manifest.ViewX + "," + manifest.ViewY + "," +
                       manifest.ViewWidth + "," + manifest.ViewHeight +
-                      " floorTiles=" + copied + "/" + tiles.Count);
+                      " objectAnchors=" + (manifest.ObjectCells?.Count ?? manifest.SampleCells.Count) +
+                      " floorTiles=" + copied + " loaded " + reused + " reused / " + tiles.Count);
         }
 
         private ZirconMapManifest CreateChunk(ZirconMapManifest source, int centerX, int centerY)
         {
-            int width = Mathf.Min(chunkSize, source.Width);
-            int height = Mathf.Min(chunkSize, source.Height);
+            int effectiveChunkSize = chunkSize > 8 ? chunkSize : 96;
+            int width = Mathf.Min(effectiveChunkSize, source.Width);
+            int height = Mathf.Min(effectiveChunkSize, source.Height);
             int x = Mathf.Clamp(centerX - width / 2, 0, source.Width - width);
             int y = Mathf.Clamp(centerY - height / 2, 0, source.Height - height);
             var cells = new List<ZirconMapCellManifest>(width * height);
+            var objectCells = new List<ZirconMapCellManifest>();
             int right = x + width;
             int bottom = y + height;
+            int predicted = predictedStepAllowance > 0 ? predictedStepAllowance : 2;
+            int anchorPadding = Mathf.Max(predicted,
+                objectAnchorPaddingCells > 0 ? objectAnchorPaddingCells : 2);
+            int heightPadding = Mathf.Max(23,
+                objectHeightPaddingCells > 0 ? objectHeightPaddingCells : 24);
+            int objectLeft = Mathf.Max(0, x - anchorPadding);
+            int objectRight = Mathf.Min(source.Width, right + anchorPadding);
+            int objectTop = Mathf.Max(0, y - anchorPadding);
+            // Map object sprites use a bottom-left pivot. Existing production
+            // assets reach 736px (23 map rows), so anchors below the logical
+            // floor chunk must be retained for their upper pixels to survive.
+            int objectBottom = Mathf.Min(source.Height, bottom + heightPadding);
             foreach (ZirconMapCellManifest cell in source.SampleCells)
+            {
                 if (cell.X >= x && cell.X < right && cell.Y >= y && cell.Y < bottom)
                     cells.Add(cell);
+                if (cell.X >= objectLeft && cell.X < objectRight &&
+                    cell.Y >= objectTop && cell.Y < objectBottom &&
+                    (cell.MiddleImage > 0 || cell.FrontImage > 0))
+                    objectCells.Add(cell);
+            }
             return new ZirconMapManifest
             {
                 Source = source.Source,
@@ -179,6 +244,7 @@ namespace Zircon.Mobile.Game.World
                 ViewWidth = width,
                 ViewHeight = height,
                 SampleCells = cells,
+                ObjectCells = objectCells,
             };
         }
 

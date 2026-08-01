@@ -28,7 +28,7 @@ internal static class Program
         {
             SystemDbContent content = SystemDbMagicReader.ReadContent(source);
             SystemDbMagicReader.WriteContentManifests(source, output, content);
-            Console.WriteLine($"system manifests={output} magics={content.Magics.Count} items={content.Items.Count} npcPages={content.NpcPages.Count} npcButtons={content.NpcButtons.Count} npcGoods={content.NpcGoods.Count} quests={content.Quests.Count} questTasks={content.QuestTasks.Count} maps={content.Maps.Count}");
+            Console.WriteLine($"system manifests={output} magics={content.Magics.Count} items={content.Items.Count} npcs={content.NpcInfos.Count} npcPages={content.NpcPages.Count} npcButtons={content.NpcButtons.Count} npcGoods={content.NpcGoods.Count} quests={content.Quests.Count} questTasks={content.QuestTasks.Count} maps={content.Maps.Count}");
             return 0;
         }
 
@@ -566,4 +566,3 @@ internal static class PngWriter
         return crc;
     }
 }
-
