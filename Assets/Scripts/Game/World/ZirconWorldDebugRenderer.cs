@@ -61,14 +61,18 @@ namespace Zircon.Mobile.Game.World
 
         private readonly struct MovementSegment
         {
-            public MovementSegment(Vector3 target, float duration)
+            public MovementSegment(Vector3 target, float duration, byte direction, int distance)
             {
                 Target = target;
                 Duration = duration;
+                Direction = direction;
+                Distance = distance;
             }
 
             public Vector3 Target { get; }
             public float Duration { get; }
+            public byte Direction { get; }
+            public int Distance { get; }
         }
 
         private readonly struct Prediction
@@ -159,6 +163,11 @@ namespace Zircon.Mobile.Game.World
             selectedObjectId = objectId;
             hasSelectedObjectId = true;
             renderedSnapshot = null;
+        }
+
+        public bool IsSelectedObject(uint objectId)
+        {
+            return hasSelectedObjectId && selectedObjectId == objectId;
         }
 
         public void ClearSelectedObject()
@@ -276,13 +285,11 @@ namespace Zircon.Mobile.Game.World
             int moveDistance = Mathf.Clamp(distance, 1, 2);
             Vector2Int next = movement.PlannedCell + delta * moveDistance;
             movement.PlannedCell = next;
-            movement.VisualDirection = direction;
-            movement.VisualMoveDistance = moveDistance;
             movement.Unconfirmed.Add(new Prediction(next, Time.unscaledTime));
             if (movement.Unconfirmed.Count > 32)
                 movement.Unconfirmed.RemoveAt(0);
             EnqueueMovement(renderer, movement, ToWorldPosition(next.x, next.y),
-                MovementActionDuration());
+                MovementActionDuration(), direction, moveDistance);
             return true;
         }
 
@@ -355,12 +362,14 @@ namespace Zircon.Mobile.Game.World
             // the bounded prediction timeout below.
             if (sameCell)
             {
-                if (objectId != localPlayerObjectId || movement.Unconfirmed.Count == 0)
+                if (movement.Duration <= 0f && movement.QueuedTargets.Count == 0 &&
+                    (objectId != localPlayerObjectId || movement.Unconfirmed.Count == 0))
+                {
+                    movement.VisualDirection = direction;
                     movement.VisualMoveDistance = normalizedMoveDistance;
+                }
                 return;
             }
-
-            movement.VisualMoveDistance = normalizedMoveDistance;
 
             Vector2Int previousCell = movement.HasAuthoritativeCell
                 ? movement.AuthoritativeCell
@@ -377,6 +386,7 @@ namespace Zircon.Mobile.Game.World
             movement.QueuedTargets.Clear();
             movement.PlannedCell = cell;
             movement.VisualDirection = direction;
+            movement.VisualMoveDistance = normalizedMoveDistance;
             if (correctingPrediction)
             {
                 // A server correction must not be rendered as a standing character
@@ -408,7 +418,7 @@ namespace Zircon.Mobile.Game.World
                         : Mathf.Max(0.05f,
                             movementSecondsPerCell * Mathf.Max(1f, cells)),
                     Time.unscaledTime,
-                    false);
+                    false, direction, normalizedMoveDistance);
             }
         }
 
@@ -465,7 +475,9 @@ namespace Zircon.Mobile.Game.World
             SpriteRenderer renderer,
             MovementState movement,
             Vector3 target,
-            float duration)
+            float duration,
+            byte direction,
+            int distance)
         {
             float now = Time.unscaledTime;
             AdvanceMovement(renderer, movement, now);
@@ -476,13 +488,14 @@ namespace Zircon.Mobile.Game.World
                 if (movement.LastMovementEndedAt > 0f && endedAgo >= 0f && endedAgo <= 0.10f)
                     startedAt = movement.LastMovementEndedAt;
                 BeginMovement(renderer, movement, target,
-                    duration, startedAt, false);
+                    duration, startedAt, false, direction, distance);
                 // If this frame arrived just after the previous segment ended,
                 // catch up by that fraction instead of visibly pausing on the cell.
                 AdvanceMovement(renderer, movement, now);
                 return;
             }
-            movement.QueuedTargets.Enqueue(new MovementSegment(target, duration));
+            movement.QueuedTargets.Enqueue(new MovementSegment(
+                target, duration, direction, distance));
         }
 
         private void BeginMovement(
@@ -491,10 +504,14 @@ namespace Zircon.Mobile.Game.World
             Vector3 target,
             float duration,
             float startedAt,
-            bool isCorrection)
+            bool isCorrection,
+            byte direction,
+            int distance)
         {
             Vector3 from = renderer.transform.localPosition;
             movement.IsCorrection = isCorrection;
+            movement.VisualDirection = direction;
+            movement.VisualMoveDistance = distance;
             if ((from - target).sqrMagnitude < 0.000001f)
             {
                 movement.From = target;
@@ -543,6 +560,8 @@ namespace Zircon.Mobile.Game.World
                 movement.StartedAt = finishedAt;
                 movement.IsCorrection = false;
                 movement.Duration = Mathf.Max(0.05f, next.Duration);
+                movement.VisualDirection = next.Direction;
+                movement.VisualMoveDistance = next.Distance;
             }
 
             renderer.transform.localPosition = movement.Target;

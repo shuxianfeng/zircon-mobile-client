@@ -382,6 +382,7 @@ namespace Zircon.Mobile.Game.World
                 case 10:
                     return "player.standard.male.weapon11";
                 case 14:
+                case 15:
                     return "player.standard.male.weapon15";
                 default:
                     return null;

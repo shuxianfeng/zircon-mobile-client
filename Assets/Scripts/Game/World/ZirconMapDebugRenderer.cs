@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
@@ -35,6 +36,7 @@ namespace Zircon.Mobile.Game.World
         }
 
         public ZirconMapManifest Manifest { get; private set; }
+        public bool IsVisualBuildComplete { get; private set; }
 
         private void Start()
         {
@@ -50,6 +52,7 @@ namespace Zircon.Mobile.Game.World
 
         public void RenderManifest(string manifestPath)
         {
+            IsVisualBuildComplete = false;
             Clear();
             EnsureSprite();
 
@@ -75,10 +78,50 @@ namespace Zircon.Mobile.Game.World
                 cellsByLocation[GetKey(cell.X, cell.Y)] = cell;
                 CreateCell(cell);
             }
+            IsVisualBuildComplete = true;
+        }
+
+        public IEnumerator RenderManifestIncremental(string manifestPath)
+        {
+            IsVisualBuildComplete = false;
+            Clear();
+            EnsureSprite();
+            if (!File.Exists(manifestPath))
+            {
+                Debug.LogWarning($"Map manifest not found: {manifestPath}", this);
+                yield break;
+            }
+
+            Manifest = JsonUtility.FromJson<ZirconMapManifest>(File.ReadAllText(manifestPath));
+            if (Manifest?.SampleCells == null)
+                yield break;
+
+            int count = maxRenderedCells > 0
+                ? Mathf.Min(maxRenderedCells, Manifest.SampleCells.Count)
+                : Manifest.SampleCells.Count;
+            // Collision must be complete before any visual batching yields.
+            for (int i = 0; i < count; i++)
+            {
+                ZirconMapCellManifest cell = Manifest.SampleCells[i];
+                cellsByLocation[GetKey(cell.X, cell.Y)] = cell;
+            }
+
+            if (tileSprites.Count == 0)
+                yield return BuildTileAtlasIncremental(Manifest.SampleCells, count, 12);
+
+            const int cellsPerFrame = 96;
+            for (int i = 0; i < count; i++)
+            {
+                CreateCell(Manifest.SampleCells[i]);
+                if ((i + 1) % cellsPerFrame == 0)
+                    yield return null;
+            }
+            IsVisualBuildComplete = true;
         }
 
         public void Clear()
         {
+            IsVisualBuildComplete = false;
             foreach (MapCellVisual visual in cells)
             {
                 if (visual?.Renderer != null)
@@ -217,9 +260,17 @@ namespace Zircon.Mobile.Game.World
 
         private void BuildTileAtlas(IReadOnlyList<ZirconMapCellManifest> mapCells, int count)
         {
+            IEnumerator routine = BuildTileAtlasIncremental(mapCells, count, int.MaxValue);
+            while (routine.MoveNext()) { }
+        }
+
+        private IEnumerator BuildTileAtlasIncremental(
+            IReadOnlyList<ZirconMapCellManifest> mapCells, int count, int tilesPerFrame)
+        {
             var keys = new List<string>();
             var textures = new List<Texture2D>();
             var seen = new HashSet<string>();
+            int loadedSinceYield = 0;
             string root = Path.Combine(Application.dataPath,
                 generatedTextureRoot.Replace('/', Path.DirectorySeparatorChar));
             for (int i = 0; i < count; i++)
@@ -237,10 +288,15 @@ namespace Zircon.Mobile.Game.World
                     continue;
                 keys.Add(key);
                 textures.Add(texture);
+                if (++loadedSinceYield >= tilesPerFrame)
+                {
+                    loadedSinceYield = 0;
+                    yield return null;
+                }
             }
 
             if (textures.Count == 0)
-                return;
+                yield break;
             if (!TryPack(textures, 2048, out Texture2D atlas, out Rect[] rects) &&
                 !TryPack(textures, 4096, out atlas, out rects))
             {
@@ -251,7 +307,7 @@ namespace Zircon.Mobile.Game.World
                     tileSprites[keys[i]] = CreateTileSprite(texture,
                         new Rect(0f, 0f, texture.width, texture.height), keys[i]);
                 }
-                return;
+                yield break;
             }
 
             atlas.name = "ZirconMapFloorAtlas";

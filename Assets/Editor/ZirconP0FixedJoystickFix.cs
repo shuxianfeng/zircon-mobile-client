@@ -22,12 +22,13 @@ namespace Zircon.Mobile.Editor
             if (padObject == null || knob == null || session == null || map == null || world == null)
                 throw new InvalidOperationException("Fixed joystick dependencies are incomplete.");
 
-            // The legacy component still owns the pickup button. Disable only
-            // its movement by making its dead zone unreachable.
+            // The legacy component still owns the buttons, but must not also
+            // handle pointer events or write the fixed joystick's knob.
             ZirconMobileGameplayControlsBehaviour legacy = padObject.GetComponent<ZirconMobileGameplayControlsBehaviour>();
             if (legacy != null)
             {
                 var legacyObject = new SerializedObject(legacy);
+                legacyObject.FindProperty("enableMovementInput").boolValue = false;
                 legacyObject.FindProperty("deadZonePixels").floatValue = 100000f;
                 legacyObject.ApplyModifiedPropertiesWithoutUndo();
             }

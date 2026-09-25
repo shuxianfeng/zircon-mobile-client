@@ -16,6 +16,7 @@ namespace Zircon.Mobile.Game.World
         [SerializeField] private ZirconMapDebugRenderer mapRenderer;
         [SerializeField] private ZirconWorldDebugRenderer worldRenderer;
         [SerializeField] private TMP_Text statusText;
+        [SerializeField] private bool showWorldDiagnosticStatus;
 
         private ZirconMapManifest cleanedManifest;
         private float nextStatusRefresh;
@@ -160,10 +161,18 @@ namespace Zircon.Mobile.Game.World
                 }
                 else if (entity.Kind == ZirconEntityKind.Monster)
                 {
+                    bool known = ZirconProductionEntityPresentationBehaviour.TryGetKnownMonster(
+                        entity.ModelIndex, out string monsterName, out _);
+                    ZirconSystemCatalogBehaviour.MonsterEntry monster =
+                        catalog?.GetMonster(entity.ModelIndex);
                     name = !string.IsNullOrWhiteSpace(entity.PetOwner)
                         ? entity.PetOwner + "的宠物"
-                        : "怪物 #" + entity.ModelIndex + "（样例外观）";
-                    color = new Color(1f, 0.38f, 0.28f, 1f);
+                        : !string.IsNullOrWhiteSpace(monster?.Name)
+                            ? monster.Name
+                            : known ? monsterName : "怪物 #" + entity.ModelIndex;
+                    color = string.IsNullOrWhiteSpace(entity.PetOwner)
+                        ? new Color(1f, 0.38f, 0.28f, 1f)
+                        : new Color(0.56f, 0.94f, 1f, 1f);
                 }
                 else
                 {
@@ -179,6 +188,10 @@ namespace Zircon.Mobile.Game.World
                 float spriteTop = renderer.sprite != null
                     ? renderer.sprite.bounds.max.y * Mathf.Abs(renderer.transform.localScale.y)
                     : 0.76f;
+                if (entity.Kind == ZirconEntityKind.Monster &&
+                    ZirconProductionEntityPresentationBehaviour.TryGetKnownMonster(
+                        entity.ModelIndex, out _, out float monsterHeight))
+                    spriteTop = monsterHeight;
                 entry.Root.localPosition = renderer.transform.localPosition +
                                            new Vector3(0f, spriteTop + 0.10f, 0f);
                 entry.Canvas.sortingOrder = renderer.sortingOrder + 100;
@@ -238,9 +251,18 @@ namespace Zircon.Mobile.Game.World
             if (statusText == null)
                 return;
 
+            Graphic statusBackground = statusText.transform.parent?.GetComponent<Graphic>();
+            if (!showWorldDiagnosticStatus)
+            {
+                if (statusBackground != null && statusBackground.enabled)
+                    statusBackground.enabled = false;
+                if (statusText.gameObject.activeSelf)
+                    statusText.gameObject.SetActive(false);
+                return;
+            }
+
             ZirconConnectionState state = session?.ConnectionState ?? ZirconConnectionState.Disconnected;
             bool worldUiActive = state == ZirconConnectionState.LoadingMap || state == ZirconConnectionState.InGame;
-            Graphic statusBackground = statusText.transform.parent?.GetComponent<Graphic>();
             if (statusBackground != null && statusBackground.enabled != worldUiActive)
                 statusBackground.enabled = worldUiActive;
             if (statusText.gameObject.activeSelf != worldUiActive)

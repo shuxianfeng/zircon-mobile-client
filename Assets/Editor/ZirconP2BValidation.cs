@@ -42,6 +42,7 @@ namespace Zircon.Mobile.Editor
                 throw new InvalidOperationException("P2-B validation requires the Android build target.");
 
             ValidateCurrentMalePlayer();
+            ValidateCurrentMonsters();
             ValidateMap("Assets/Generated/Data/Maps/1.map.manifest.json", "Map5", 350, 350);
             ValidateMap("Assets/Generated/Data/Maps/2.map.manifest.json", "Map6", 300, 300);
         }
@@ -55,6 +56,9 @@ namespace Zircon.Mobile.Editor
                 throw new InvalidOperationException("P2-B production visual manifest is invalid.");
 
             int[] drawFrames = ProductionDrawFrames();
+            // Armour 6 and weapon 14 were staged before running frames were available.
+            // Runtime deliberately falls back to the complete walking sequence for them.
+            int[] walkingDrawFrames = drawFrames.Where(value => value < 160 || value >= 240).ToArray();
             ValidateSet(manifest, "player.standard.male.body",
                 drawFrames.Select(value => 10000 + value));
             ValidateSet(manifest, "player.standard.male.overlay",
@@ -63,21 +67,28 @@ namespace Zircon.Mobile.Editor
             ValidateSet(manifest, "player.standard.male.weapon11",
                 drawFrames.Select(value => 5000 + value));
             ValidateSet(manifest, "player.standard.male.body",
-                drawFrames.Select(value => 30000 + value));
+                walkingDrawFrames.Select(value => 30000 + value));
             ValidateSet(manifest, "player.standard.male.overlay",
-                drawFrames.Where(value => value < 1920).Select(value => 30000 + value));
+                walkingDrawFrames.Where(value => value < 1920).Select(value => 30000 + value));
             ValidateSet(manifest, "player.standard.male.weapon2",
-                drawFrames.Select(value => 20000 + value));
+                walkingDrawFrames.Select(value => 20000 + value));
+            ValidateSet(manifest, "player.standard.male.body",
+                drawFrames.Select(value => 40000 + value));
+            ValidateSet(manifest, "player.standard.male.overlay",
+                drawFrames.Select(value => 40000 + value));
+            ValidateSet(manifest, "player.standard.male.weapon15",
+                drawFrames.Select(value => 35000 + value));
 
             Debug.Log("P2-B male player validation passed: staged appearances=" +
-                      "armour=2/weapon=101,armour=6/weapon=14 drawFrames=" +
+                      "armour=2/weapon=101,armour=6/weapon=14,armour=8/weapon=157 drawFrames=" +
                       drawFrames.Length + " layers=4");
         }
 
         private static void ValidateSet(
             ZirconRuntimeVisualManifest manifest,
             string setId,
-            IEnumerable<int> requiredIndexes)
+            IEnumerable<int> requiredIndexes,
+            string expectedBundle = "zircon-p2-character")
         {
             ZirconRuntimeSpriteSet set = manifest.SpriteSets.FirstOrDefault(value =>
                 value != null && string.Equals(value.Id, setId, StringComparison.OrdinalIgnoreCase));
@@ -89,11 +100,44 @@ namespace Zircon.Mobile.Editor
             {
                 if (!frames.TryGetValue(index, out ZirconRuntimeSpriteFrame frame))
                     throw new InvalidOperationException("P2-B frame is missing: " + setId + "/" + index);
-                if (!string.Equals(frame.Bundle, "zircon-p2-character",
+                if (!string.Equals(frame.Bundle, expectedBundle,
                         StringComparison.OrdinalIgnoreCase) ||
                     string.IsNullOrEmpty(frame.AtlasAsset) ||
                     frame.AtlasWidth <= 0 || frame.AtlasHeight <= 0)
                     throw new InvalidOperationException("P2-B atlas mapping is invalid: " + setId + "/" + index);
+            }
+        }
+
+        private static void ValidateCurrentMonsters()
+        {
+            ZirconRuntimeVisualManifest manifest =
+                JsonUtility.FromJson<ZirconRuntimeVisualManifest>(
+                    File.ReadAllText(Path.GetFullPath(VisualManifestPath)));
+            if (manifest?.SpriteSets == null)
+                throw new InvalidOperationException("P2-B monster visual manifest is invalid.");
+
+            ValidateSet(manifest, "entity.monster.mon3", MonsterFrames(0, true), "zircon-p2-entities");
+            ValidateSet(manifest, "entity.monster.mon3", MonsterFrames(1, true), "zircon-p2-entities");
+            ValidateSet(manifest, "entity.monster.mon13", MonsterFrames(1, true), "zircon-p2-entities");
+            ValidateSet(manifest, "entity.monster.mon34", MonsterFrames(0, false), "zircon-p2-entities");
+            Debug.Log("P2-B monster validation passed: chicken, deer, cow, flower pig; " +
+                      "eight-direction standing/walking/attack frames staged.");
+        }
+
+        private static IEnumerable<int> MonsterFrames(int shape, bool includeDead)
+        {
+            int shapeBase = shape * 1000;
+            for (int direction = 0; direction < 8; direction++)
+            {
+                for (int frame = 0; frame < 4; frame++)
+                    yield return shapeBase + direction * 10 + frame;
+                for (int frame = 0; frame < 6; frame++)
+                {
+                    yield return shapeBase + 80 + direction * 10 + frame;
+                    yield return shapeBase + 160 + direction * 10 + frame;
+                }
+                if (includeDead)
+                    yield return shapeBase + 329 + direction * 10;
             }
         }
 

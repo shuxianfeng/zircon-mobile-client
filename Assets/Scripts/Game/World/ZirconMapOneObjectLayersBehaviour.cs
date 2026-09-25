@@ -119,7 +119,7 @@ namespace Zircon.Mobile.Game.World
             }
 
             ZirconMapManifest manifest = mapRenderer.Manifest;
-            if (manifest == null ||
+            if (manifest == null || !mapRenderer.IsVisualBuildComplete ||
                 !TryGetDefinition(snapshot.MapIndex, out MapDefinition definition) ||
                 !ManifestMatchesDefinition(manifest, definition))
                 return;
@@ -204,6 +204,7 @@ namespace Zircon.Mobile.Game.World
             int version)
         {
             loading = true;
+            float startedAt = Time.realtimeSinceStartup;
             IReadOnlyList<ZirconMapCellManifest> objectCells = GetObjectCells(manifest);
             if (objectCells == null)
             {
@@ -284,7 +285,12 @@ namespace Zircon.Mobile.Game.World
                 yield break;
             }
 
-            BuildObjectAtlas(cache);
+            yield return BuildObjectAtlasesIncremental(cache, manifest, definition, version);
+            if (!IsRequestCurrent(manifest, definition, version))
+            {
+                FailLoad("superseded while building object atlases", true);
+                yield break;
+            }
             int resolved = 0;
             foreach (string key in needed)
             {
@@ -318,6 +324,7 @@ namespace Zircon.Mobile.Game.World
             var stagedColumns = new Dictionary<int, List<MapObjectVisual>>();
             int middle = 0;
             int front = 0;
+            int processedCells = 0;
             foreach (ZirconMapCellManifest cell in objectCells)
             {
                 if (Create(cell, cell.MiddleFile, cell.MiddleImage, false,
@@ -326,6 +333,16 @@ namespace Zircon.Mobile.Game.World
                 if (Create(cell, cell.FrontFile, cell.FrontImage, true,
                         cache, stagedRoot, stagedVisuals, stagedColumns))
                     front++;
+                if (++processedCells % 64 == 0)
+                {
+                    yield return null;
+                    if (!IsRequestCurrent(manifest, definition, version))
+                    {
+                        Destroy(stagedRoot.gameObject);
+                        FailLoad("superseded while staging map objects", true);
+                        yield break;
+                    }
+                }
             }
 
             if (!IsRequestCurrent(manifest, definition, version))
@@ -341,7 +358,8 @@ namespace Zircon.Mobile.Game.World
                       " newlyLoaded=" + newlyLoaded +
                       " resolved=" + resolved + "/" + needed.Count +
                       " missing=" + failed +
-                      " middle=" + middle + " front=" + front);
+                      " middle=" + middle + " front=" + front +
+                      " elapsed=" + (Time.realtimeSinceStartup - startedAt).ToString("F2") + "s");
         }
 
         private static IReadOnlyList<ZirconMapCellManifest> GetObjectCells(
@@ -507,50 +525,63 @@ namespace Zircon.Mobile.Game.World
                    y < bounds.yMax + Mathf.Max(1, heightCells);
         }
 
-        private void BuildObjectAtlas(ResourceCache cache)
+        private IEnumerator BuildObjectAtlasesIncremental(ResourceCache cache,
+            ZirconMapManifest manifest, MapDefinition definition, int version)
         {
-            var resources = new List<ResourceSprite>();
-            var textures = new List<Texture2D>();
+            var pending = new List<ResourceSprite>();
             foreach (ResourceSprite resource in cache.Sprites.Values)
             {
                 if (resource?.Sprite != null || resource?.SourceTexture == null)
                     continue;
-                resources.Add(resource);
-                textures.Add(resource.SourceTexture);
+                pending.Add(resource);
             }
 
-            if (textures.Count == 0)
-                return;
-            if (!TryPack(textures, 2048, out Texture2D atlas, out Rect[] rects) &&
-                !TryPack(textures, 4096, out atlas, out rects))
+            const int texturesPerAtlas = 96;
+            for (int start = 0; start < pending.Count; start += texturesPerAtlas)
             {
-                foreach (ResourceSprite resource in resources)
+                if (!IsRequestCurrent(manifest, definition, version))
+                    yield break;
+
+                int count = Mathf.Min(texturesPerAtlas, pending.Count - start);
+                var textures = new List<Texture2D>(count);
+                for (int i = 0; i < count; i++)
+                    textures.Add(pending[start + i].SourceTexture);
+
+                if (!TryPack(textures, 2048, out Texture2D atlas, out Rect[] rects) &&
+                    !TryPack(textures, 4096, out atlas, out rects))
                 {
-                    Texture2D texture = resource.SourceTexture;
-                    resource.Sprite = CreateObjectSprite(texture,
-                        new Rect(0f, 0f, texture.width, texture.height), resource.Name);
+                    for (int i = 0; i < count; i++)
+                    {
+                        ResourceSprite resource = pending[start + i];
+                        Texture2D texture = resource.SourceTexture;
+                        resource.Sprite = CreateObjectSprite(texture,
+                            new Rect(0f, 0f, texture.width, texture.height), resource.Name);
+                    }
                 }
-                return;
+                else
+                {
+                    atlas.name = "ZirconMapObjectAtlas_" + cache.MapIndex + "_" + cache.Atlases.Count;
+                    atlas.filterMode = FilterMode.Point;
+                    atlas.wrapMode = TextureWrapMode.Clamp;
+                    cache.Atlases.Add(atlas);
+                    for (int i = 0; i < count; i++)
+                    {
+                        ResourceSprite resource = pending[start + i];
+                        Texture2D source = resource.SourceTexture;
+                        Rect packed = rects[i];
+                        Rect pixels = new Rect(
+                            Mathf.Round(packed.x * atlas.width),
+                            Mathf.Round(packed.y * atlas.height),
+                            source.width,
+                            source.height);
+                        resource.Sprite = CreateObjectSprite(atlas, pixels, resource.Name);
+                        Destroy(source);
+                        resource.SourceTexture = null;
+                    }
+                    atlas.Apply(false, true);
+                }
+                yield return null;
             }
-
-            atlas.name = "ZirconMapObjectAtlas_" + cache.MapIndex + "_" + cache.Atlases.Count;
-            atlas.filterMode = FilterMode.Point;
-            atlas.wrapMode = TextureWrapMode.Clamp;
-            cache.Atlases.Add(atlas);
-            for (int i = 0; i < resources.Count; i++)
-            {
-                Texture2D source = resources[i].SourceTexture;
-                Rect packed = rects[i];
-                Rect pixels = new Rect(
-                    Mathf.Round(packed.x * atlas.width),
-                    Mathf.Round(packed.y * atlas.height),
-                    source.width,
-                    source.height);
-                resources[i].Sprite = CreateObjectSprite(atlas, pixels, resources[i].Name);
-                Destroy(source);
-                resources[i].SourceTexture = null;
-            }
-            atlas.Apply(false, true);
         }
 
         private bool TryPack(

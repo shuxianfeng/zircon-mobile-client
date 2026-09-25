@@ -20,6 +20,7 @@ internal static class Program
         TestMovementRules();
         TestMovePacketsAndWorldDistance();
         TestTwoCellPredictionConfirmation();
+        TestQueuedTurnFacesActiveMovement();
         TestPredictionCorrectionDoesNotIdleGlide();
         TestClientMagic();
         TestSkillKeyAndStorageCommands();
@@ -37,7 +38,7 @@ internal static class Program
         TestWorldInventoryAndBuffState();
         TestClientChat();
         TestMapTransitionPackets();
-        Console.WriteLine("protocol tests passed=20");
+        Console.WriteLine("protocol tests passed=21");
         return 0;
     }
 
@@ -198,6 +199,56 @@ internal static class Program
             "authoritative run destination clears pending prediction");
         True(renderer.TryPredictLocalMove(2, 2),
             "renderer accepts another run after two-cell confirmation");
+    }
+
+    private static void TestQueuedTurnFacesActiveMovement()
+    {
+        Time.time = 40f;
+        Time.unscaledTime = 40f;
+        var player = new ZirconEntityState
+        {
+            ObjectId = 99u,
+            Kind = ZirconEntityKind.Player,
+            MapIndex = 1,
+            Location = new ZirconMapPoint(10, 10),
+            Direction = 2,
+            PositionSequence = 1,
+        };
+        var renderer = new ZirconWorldDebugRenderer();
+        renderer.Render(CreateMovementSnapshot(player));
+
+        True(renderer.TryPredictLocalMove(2, 2), "first run to the right accepted");
+        Time.time = 40.2f;
+        Time.unscaledTime = 40.2f;
+        InvokeRendererLateUpdate(renderer);
+        True(renderer.TryPredictLocalMove(6, 2), "180-degree turn queued");
+        True(renderer.TryGetVisualDirection(99u, out byte facing),
+            "queued turn exposes active facing");
+        Equal((byte)2, facing,
+            "character keeps facing right while the active segment still moves right");
+
+        ZirconEntityState confirmed = player.Clone();
+        confirmed.Location = new ZirconMapPoint(12, 10);
+        confirmed.Direction = 2;
+        confirmed.PositionSequence = 2;
+        confirmed.MoveDistance = 2;
+        renderer.Render(CreateMovementSnapshot(confirmed));
+        True(renderer.TryGetVisualDirection(99u, out facing),
+            "server confirmation keeps active facing available");
+        Equal((byte)2, facing,
+            "confirming a predicted segment does not face the queued reverse run");
+
+        Time.time = 40.61f;
+        Time.unscaledTime = 40.61f;
+        InvokeRendererLateUpdate(renderer);
+        True(renderer.TryGetVisualDirection(99u, out facing),
+            "reverse segment exposes facing");
+        Equal((byte)6, facing,
+            "character faces left when the reverse segment actually begins");
+        True(renderer.TryGetEntityRenderer(99u, out SpriteRenderer marker),
+            "reverse segment exposes marker");
+        True(marker.transform.localPosition.x < 12f * renderer.TileScale,
+            "reverse segment actually moves left when facing left");
     }
 
     private static void TestPredictionCorrectionDoesNotIdleGlide()

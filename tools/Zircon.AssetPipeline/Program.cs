@@ -27,8 +27,14 @@ internal static class Program
         if (string.Equals(Path.GetExtension(source), ".db", StringComparison.OrdinalIgnoreCase))
         {
             SystemDbContent content = SystemDbMagicReader.ReadContent(source);
+            if (string.Equals(GetArg(args, "--system-only"), "monsters", StringComparison.OrdinalIgnoreCase))
+            {
+                SystemDbMagicReader.WriteMonsterManifest(source, output, content.Monsters);
+                Console.WriteLine($"monster manifest={output} monsters={content.Monsters.Count}");
+                return 0;
+            }
             SystemDbMagicReader.WriteContentManifests(source, output, content);
-            Console.WriteLine($"system manifests={output} magics={content.Magics.Count} items={content.Items.Count} npcs={content.NpcInfos.Count} npcPages={content.NpcPages.Count} npcButtons={content.NpcButtons.Count} npcGoods={content.NpcGoods.Count} quests={content.Quests.Count} questTasks={content.QuestTasks.Count} maps={content.Maps.Count}");
+            Console.WriteLine($"system manifests={output} magics={content.Magics.Count} items={content.Items.Count} npcs={content.NpcInfos.Count} npcPages={content.NpcPages.Count} npcButtons={content.NpcButtons.Count} npcGoods={content.NpcGoods.Count} quests={content.Quests.Count} questTasks={content.QuestTasks.Count} maps={content.Maps.Count} monsters={content.Monsters.Count}");
             return 0;
         }
 

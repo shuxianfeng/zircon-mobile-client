@@ -36,6 +36,7 @@ internal static class SystemDbMagicReader
         var quests = new List<QuestManifestEntry>();
         var questTasks = new List<QuestTaskManifestEntry>();
         var maps = new List<MapManifestEntry>();
+        var monsters = new List<MonsterInfoManifestEntry>();
 
         foreach (DbMapping mapping in mappings)
         {
@@ -75,6 +76,13 @@ internal static class SystemDbMagicReader
                 ReadCollection(data, mapping, values => new MapManifestEntry(
                     GetInt(values, "Index"), GetString(values, "FileName"), GetString(values, "Description"), GetInt(values, "MiniMap")), maps);
             }
+            else if (mapping.TypeName.EndsWith(".MonsterInfo", StringComparison.Ordinal))
+            {
+                ReadCollection(data, mapping, values => new MonsterInfoManifestEntry(
+                    GetInt(values, "Index"), GetString(values, "MonsterName"), GetInt(values, "Image"),
+                    GetInt(values, "AI"), GetInt(values, "Level"), GetInt(values, "BodyShape"),
+                    GetString(values, "LibraryFile")), monsters);
+            }
             else if (mapping.TypeName.EndsWith(".NPCInfo", StringComparison.Ordinal))
             {
                 ReadCollection(data, mapping, values => new NpcInfoManifestEntry(
@@ -101,7 +109,7 @@ internal static class SystemDbMagicReader
             }
         }
 
-        return new SystemDbContent(magics, items, npcInfos, npcPages, npcButtons, npcGoods, quests, questTasks, maps);
+        return new SystemDbContent(magics, items, npcInfos, npcPages, npcButtons, npcGoods, quests, questTasks, maps, monsters);
     }
 
     public static void WriteContentManifests(string source, string outputDirectory, SystemDbContent content)
@@ -113,6 +121,15 @@ internal static class SystemDbMagicReader
         File.WriteAllText(Path.Combine(outputDirectory, "npc-pages.manifest.json"), JsonSerializer.Serialize(new NpcPageManifest(Path.GetFileName(source), DateTime.UtcNow, content.NpcInfos, content.NpcPages, content.NpcButtons, content.NpcGoods), options));
         File.WriteAllText(Path.Combine(outputDirectory, "quests.manifest.json"), JsonSerializer.Serialize(new QuestManifest(Path.GetFileName(source), DateTime.UtcNow, content.Quests, content.QuestTasks), options));
         File.WriteAllText(Path.Combine(outputDirectory, "maps.manifest.json"), JsonSerializer.Serialize(new MapInfoManifest(Path.GetFileName(source), DateTime.UtcNow, content.Maps), options));
+        WriteMonsterManifest(source, outputDirectory, content.Monsters);
+    }
+
+    public static void WriteMonsterManifest(string source, string outputDirectory, IReadOnlyList<MonsterInfoManifestEntry> monsters)
+    {
+        Directory.CreateDirectory(outputDirectory);
+        var manifest = new MonsterInfoManifest(Path.GetFileName(source), DateTime.UtcNow, monsters);
+        File.WriteAllText(Path.Combine(outputDirectory, "monsters.manifest.json"),
+            JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true }));
     }
 
     public static void WriteManifest(string source, string outputPath, IReadOnlyList<MagicManifestEntry> entries)
@@ -295,7 +312,7 @@ internal static class SystemDbMagicReader
 
 internal sealed record MagicManifest(string Source, DateTime GeneratedUtc, IReadOnlyList<MagicManifestEntry> Magics);
 internal sealed record MagicManifestEntry(int Index, string Name, int MagicType, int CharacterClass, int School, int Mode, int Icon, int BaseCost, int LevelCost, int Delay, string Description);
-internal sealed record SystemDbContent(IReadOnlyList<MagicManifestEntry> Magics, IReadOnlyList<ItemManifestEntry> Items, IReadOnlyList<NpcInfoManifestEntry> NpcInfos, IReadOnlyList<NpcPageManifestEntry> NpcPages, IReadOnlyList<NpcButtonManifestEntry> NpcButtons, IReadOnlyList<NpcGoodManifestEntry> NpcGoods, IReadOnlyList<QuestManifestEntry> Quests, IReadOnlyList<QuestTaskManifestEntry> QuestTasks, IReadOnlyList<MapManifestEntry> Maps);
+internal sealed record SystemDbContent(IReadOnlyList<MagicManifestEntry> Magics, IReadOnlyList<ItemManifestEntry> Items, IReadOnlyList<NpcInfoManifestEntry> NpcInfos, IReadOnlyList<NpcPageManifestEntry> NpcPages, IReadOnlyList<NpcButtonManifestEntry> NpcButtons, IReadOnlyList<NpcGoodManifestEntry> NpcGoods, IReadOnlyList<QuestManifestEntry> Quests, IReadOnlyList<QuestTaskManifestEntry> QuestTasks, IReadOnlyList<MapManifestEntry> Maps, IReadOnlyList<MonsterInfoManifestEntry> Monsters);
 internal sealed record ItemManifest(string Source, DateTime GeneratedUtc, IReadOnlyList<ItemManifestEntry> Items);
 internal sealed record ItemManifestEntry(int Index, string Name, int ItemType, int Image, int Durability, int Price, int Weight, int StackSize, bool CanRepair, bool CanSell, bool CanStore, bool CanTrade, bool CanDrop, string Description, int Rarity);
 internal sealed record NpcPageManifest(string Source, DateTime GeneratedUtc, IReadOnlyList<NpcInfoManifestEntry> Npcs, IReadOnlyList<NpcPageManifestEntry> Pages, IReadOnlyList<NpcButtonManifestEntry> Buttons, IReadOnlyList<NpcGoodManifestEntry> Goods);
@@ -308,3 +325,5 @@ internal sealed record QuestManifestEntry(int Index, string Name, string AcceptT
 internal sealed record QuestTaskManifestEntry(int Index, int QuestIndex, int TaskType, int ItemInfoIndex, string MobDescription, int Amount);
 internal sealed record MapInfoManifest(string Source, DateTime GeneratedUtc, IReadOnlyList<MapManifestEntry> Maps);
 internal sealed record MapManifestEntry(int Index, string FileName, string Description, int MiniMap);
+internal sealed record MonsterInfoManifest(string Source, DateTime GeneratedUtc, IReadOnlyList<MonsterInfoManifestEntry> Monsters);
+internal sealed record MonsterInfoManifestEntry(int Index, string Name, int Image, int Ai, int Level, int BodyShape, string LibraryFile);

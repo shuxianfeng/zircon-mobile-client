@@ -107,8 +107,15 @@ namespace Zircon.Mobile.Game.Input
             ZirconWorldSnapshot snapshot = protocolProbe.GetWorldSnapshot();
             if (!TryGetSelectedTarget(snapshot, out ZirconEntityState target))
             {
-                ClearSelection();
-                return;
+                // A primary mobile attack button should work without a prior
+                // lock tap, but must never auto-target another player or pet.
+                if (!TryFindNearestWildMonster(snapshot, 6, out target))
+                {
+                    ClearSelection();
+                    Debug.Log("Combat attack ignored: no wild monster within six cells");
+                    return;
+                }
+                SetSelection(target.ObjectId);
             }
 
             byte direction = DirectionFromPoints(snapshot.Location, target.Location);
@@ -116,12 +123,15 @@ namespace Zircon.Mobile.Game.Input
             {
                 autoApproachObjectId = target.ObjectId;
                 nextAutoApproachTime = Time.unscaledTime;
+                Debug.Log("Combat attack approaching target=" + target.ObjectId +
+                          " distance=" + ChebyshevDistance(snapshot.Location, target.Location));
                 await AdvanceAutoApproachAsync();
                 return;
             }
 
             autoApproachObjectId = 0;
             nextAttackTime = Time.unscaledTime + attackRepeatSeconds;
+            Debug.Log("Combat attack adjacent target=" + target.ObjectId + " direction=" + direction);
             await protocolProbe.SendAttackCommandAsync(direction);
         }
 
@@ -266,6 +276,10 @@ namespace Zircon.Mobile.Game.Input
                 if (hasRenderer)
                 {
                     Bounds bounds = entityRenderer.bounds;
+                    if (entity.Kind == ZirconEntityKind.Monster &&
+                        ZirconProductionEntityPresentationBehaviour.TryGetMonsterBodyRenderer(
+                            entity.ObjectId, out SpriteRenderer bodyRenderer))
+                        bounds = bodyRenderer.bounds;
                     bounds.Expand(selectionRadiusWorld * 0.35f);
                     if (bounds.Contains(new Vector3(tapWorld.x, tapWorld.y, bounds.center.z)))
                         distance = Vector2.Distance(tapWorld, entityWorld) * 0.01f;
@@ -315,6 +329,7 @@ namespace Zircon.Mobile.Game.Input
             selectedObjectId = objectId;
             hasSelectedObject = true;
             worldRenderer?.SetSelectedObject(objectId);
+            Debug.Log("Combat selected target=" + objectId);
         }
 
         private static bool IsInteractive(ZirconEntityState entity, ZirconWorldSnapshot snapshot)
@@ -333,7 +348,34 @@ namespace Zircon.Mobile.Game.Input
             if (entity == null || entity.Dead || (entity.Kind != ZirconEntityKind.Monster && entity.Kind != ZirconEntityKind.Player))
                 return false;
 
+            if (entity.Kind == ZirconEntityKind.Monster && snapshot.LocalPlayer != null &&
+                !string.IsNullOrWhiteSpace(entity.PetOwner) &&
+                entity.PetOwner == snapshot.LocalPlayer.Name)
+                return false;
+
             return snapshot.LocalPlayer == null || entity.ObjectId != snapshot.LocalPlayer.ObjectId;
+        }
+
+        private static bool TryFindNearestWildMonster(ZirconWorldSnapshot snapshot,
+            int maxDistance, out ZirconEntityState target)
+        {
+            target = null;
+            if (snapshot == null || !snapshot.HasLocalPlayer)
+                return false;
+
+            int bestDistance = maxDistance + 1;
+            foreach (ZirconEntityState entity in snapshot.Entities)
+            {
+                if (entity == null || entity.Kind != ZirconEntityKind.Monster ||
+                    !string.IsNullOrWhiteSpace(entity.PetOwner) || !IsAttackable(entity, snapshot))
+                    continue;
+                int distance = ChebyshevDistance(snapshot.Location, entity.Location);
+                if (distance >= bestDistance)
+                    continue;
+                target = entity;
+                bestDistance = distance;
+            }
+            return target != null;
         }
 
         private static bool TryFindAttackable(ZirconWorldSnapshot snapshot, uint objectId, out ZirconEntityState target)

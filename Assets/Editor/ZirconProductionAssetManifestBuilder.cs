@@ -57,6 +57,9 @@ namespace Zircon.Mobile.Editor
             Spec("player.standard.male.weapon15", "PlayerAppearance/M-Weapon15", "M-Weapon15.manifest.json", "_image.png"),
             Spec("entity.player.sample", "M-Hum", "M-Hum.manifest.json", "_image.png"),
             Spec("entity.monster.sample", "Mon-1", "Mon-1.manifest.json", "_image.png"),
+            Spec("entity.monster.mon3", "Mon-3", "Mon-3.manifest.json", "_image.png"),
+            Spec("entity.monster.mon13", "Mon-13", "Mon-13.manifest.json", "_image.png"),
+            Spec("entity.monster.mon34", "Mon-34", "Mon-34.manifest.json", "_image.png"),
             Spec("entity.npc.sample", "NPC", "NPC.manifest.json", "_image.png"),
             Spec("effect.icon.sample", "MIcon", "MIcon.manifest.json", "_image.png"),
         };

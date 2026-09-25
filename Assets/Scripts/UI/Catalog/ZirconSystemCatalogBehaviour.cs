@@ -12,6 +12,7 @@ namespace Zircon.Mobile.UI.Catalog
         [SerializeField] private TextAsset npcPageManifest;
         [SerializeField] private TextAsset questManifest;
         [SerializeField] private TextAsset mapManifest;
+        [SerializeField] private TextAsset monsterManifest;
 
         private readonly Dictionary<int, ItemEntry> items = new Dictionary<int, ItemEntry>();
         private readonly Dictionary<int, MagicEntry> magics = new Dictionary<int, MagicEntry>();
@@ -21,6 +22,7 @@ namespace Zircon.Mobile.UI.Catalog
         private readonly Dictionary<int, QuestEntry> quests = new Dictionary<int, QuestEntry>();
         private readonly Dictionary<int, QuestTaskEntry> questTasks = new Dictionary<int, QuestTaskEntry>();
         private readonly Dictionary<int, MapEntry> maps = new Dictionary<int, MapEntry>();
+        private readonly Dictionary<int, MonsterEntry> monsters = new Dictionary<int, MonsterEntry>();
 
         public ItemEntry GetItem(int index)
         {
@@ -38,6 +40,7 @@ namespace Zircon.Mobile.UI.Catalog
         public QuestEntry GetQuest(int index) { EnsureLoaded(); quests.TryGetValue(index, out QuestEntry value); return value; }
         public QuestTaskEntry GetQuestTask(int index) { EnsureLoaded(); questTasks.TryGetValue(index, out QuestTaskEntry value); return value; }
         public MapEntry GetMap(int index) { EnsureLoaded(); maps.TryGetValue(index, out MapEntry value); return value; }
+        public MonsterEntry GetMonster(int index) { EnsureLoaded(); monsters.TryGetValue(index, out MonsterEntry value); return value; }
         public NpcEntry GetNpc(int index) { EnsureLoaded(); npcs.TryGetValue(index, out NpcEntry value); return value; }
         public NpcPageEntry GetNpcPage(int index)
         {
@@ -92,6 +95,13 @@ namespace Zircon.Mobile.UI.Catalog
                 MapManifest manifest = JsonUtility.FromJson<MapManifest>(mapManifest.text);
                 if (manifest?.Maps != null) foreach (MapEntry map in manifest.Maps) maps[map.Index] = map;
             }
+            if (monsters.Count == 0 && monsterManifest != null)
+            {
+                MonsterManifest manifest = JsonUtility.FromJson<MonsterManifest>(monsterManifest.text);
+                if (manifest?.Monsters != null)
+                    foreach (MonsterEntry monster in manifest.Monsters)
+                        monsters[monster.Index] = monster;
+            }
             if (npcPages.Count != 0 || npcPageManifest == null)
                 return;
 
@@ -132,6 +142,8 @@ namespace Zircon.Mobile.UI.Catalog
         private sealed class QuestManifest { public QuestEntry[] Quests; public QuestTaskEntry[] Tasks; }
         [Serializable]
         private sealed class MapManifest { public MapEntry[] Maps; }
+        [Serializable]
+        private sealed class MonsterManifest { public MonsterEntry[] Monsters; }
         [Serializable]
         private sealed class NpcPageManifest { public NpcEntry[] Npcs; public NpcPageEntry[] Pages; public NpcGoodEntry[] Goods; }
 
@@ -207,6 +219,15 @@ namespace Zircon.Mobile.UI.Catalog
         public sealed class MapEntry
         {
             public int Index; public string FileName; public string Description; public int MiniMap;
+        }
+        [Serializable]
+        public sealed class MonsterEntry
+        {
+            public int Index;
+            public string Name;
+            public int Image;
+            public int BodyShape;
+            public string LibraryFile;
         }
         public sealed class NpcGoodEntry
         {

@@ -323,7 +323,16 @@ namespace Zircon.Mobile.UI.Login
             else
             {
                 if (worldState.ApplyPacket(e.Frame, out string worldSummary))
-                    AppendVerboseLog(worldSummary);
+                {
+                    // Keep attack broadcasts visible in device logs during
+                    // combat acceptance; damage still needs separate evidence.
+                    if (ZirconInGamePacketDecoder.TryDecodeObjectAttack(
+                            e.Frame, out ZirconObjectAttackInfo attack) &&
+                        worldState.GetSnapshot()?.LocalPlayer?.ObjectId == attack.ObjectId)
+                        AppendLog(worldSummary);
+                    else
+                        AppendVerboseLog(worldSummary);
+                }
                 else if (verboseProtocolLogging || showDebugOverlay)
                     AppendVerboseLog(ZirconPacketSummary.Describe(e.Frame));
             }

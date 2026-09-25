@@ -20,9 +20,10 @@ namespace Zircon.Mobile.Editor
                 ZirconProjectBootstrap.SetupProject();
             ConfigurePlayer();
             EnsureRuntimeSpriteMaterial();
-            StageGeneratedAssets();
             try
             {
+                StageGeneratedAssets();
+                ZirconP2BValidation.ValidateFromCommandLine();
                 string[] scenes = EnabledScenes();
                 if (scenes.Length == 0) throw new InvalidOperationException("No enabled scenes in Build Settings.");
                 Directory.CreateDirectory("Builds/Android");

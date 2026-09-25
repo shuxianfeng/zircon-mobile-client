@@ -101,6 +101,7 @@ namespace Zircon.Mobile.Game.World
         private IEnumerator LoadMap(MapDefinition definition, int centerX, int centerY)
         {
             loading = true;
+            float startedAt = Time.realtimeSinceStartup;
             if (mapRenderer == null)
             {
                 Debug.LogError("Production map loader cannot start because ZirconMapDebugRenderer is missing.");
@@ -186,7 +187,19 @@ namespace Zircon.Mobile.Game.World
             File.WriteAllText(runtimeManifest, json);
             SetField(mapRenderer, "generatedTextureRoot", textureRoot);
             mapRenderer.ClearTileCache();
-            mapRenderer.RenderManifest(runtimeManifest);
+            // On first entry there is no old map to preserve, so spread texture
+            // decoding and cell creation across frames. Chunk changes still use
+            // the atomic renderer path to avoid exposing a partly rebuilt map.
+            if (mapRenderer.Manifest == null)
+                yield return mapRenderer.RenderManifestIncremental(runtimeManifest);
+            else
+                mapRenderer.RenderManifest(runtimeManifest);
+            if (!mapRenderer.IsVisualBuildComplete)
+            {
+                Debug.LogError("Production map visuals failed map=" + definition.MapIndex);
+                loading = false;
+                yield break;
+            }
             loadedMapIndex = definition.MapIndex;
             loadedMapWidth = sourceManifest.Width;
             loadedMapHeight = sourceManifest.Height;
@@ -197,7 +210,8 @@ namespace Zircon.Mobile.Game.World
                       " view=" + manifest.ViewX + "," + manifest.ViewY + "," +
                       manifest.ViewWidth + "," + manifest.ViewHeight +
                       " objectAnchors=" + (manifest.ObjectCells?.Count ?? manifest.SampleCells.Count) +
-                      " floorTiles=" + copied + " loaded " + reused + " reused / " + tiles.Count);
+                      " floorTiles=" + copied + " loaded " + reused + " reused / " + tiles.Count +
+                      " elapsed=" + (Time.realtimeSinceStartup - startedAt).ToString("F2") + "s");
         }
 
         private ZirconMapManifest CreateChunk(ZirconMapManifest source, int centerX, int centerY)

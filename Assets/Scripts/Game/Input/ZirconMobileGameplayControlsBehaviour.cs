@@ -16,6 +16,7 @@ namespace Zircon.Mobile.Game.Input
         [SerializeField] private Button attackButton;
         [SerializeField] private Button pickupButton;
         [SerializeField] private RectTransform knob;
+        [SerializeField] private bool enableMovementInput = true;
         [SerializeField] private float deadZonePixels = 24f;
         [SerializeField] private float knobRadiusPixels = 54f;
         [SerializeField] private float runThreshold = 0f;
@@ -39,24 +40,25 @@ namespace Zircon.Mobile.Game.Input
             selectButton?.onClick.RemoveListener(SelectNext);
             attackButton?.onClick.RemoveListener(Attack);
             pickupButton?.onClick.RemoveListener(Pickup);
-            ResetPad();
+            ResetPad(enableMovementInput);
         }
 
         private void OnApplicationFocus(bool hasFocus)
         {
             if (!hasFocus)
-                ResetPad();
+                ResetPad(enableMovementInput);
         }
 
         private void OnApplicationPause(bool paused)
         {
             if (paused)
-                ResetPad();
+                ResetPad(enableMovementInput);
         }
 
         private void Update()
         {
-            if (!dragging || direction.sqrMagnitude < 0.01f || session == null || !session.IsInGame || Time.unscaledTime < nextMoveTime)
+            if (!enableMovementInput || !dragging || direction.sqrMagnitude < 0.01f ||
+                session == null || !session.IsInGame || Time.unscaledTime < nextMoveTime)
                 return;
 
             byte facing = ToMirDirection(direction);
@@ -78,6 +80,7 @@ namespace Zircon.Mobile.Game.Input
 
         public void OnPointerDown(PointerEventData eventData)
         {
+            if (!enableMovementInput) return;
             dragging = true;
             nextMoveTime = Time.unscaledTime;
             origin = eventData.position;
@@ -85,9 +88,15 @@ namespace Zircon.Mobile.Game.Input
             UpdatePad(eventData.position);
         }
 
-        public void OnDrag(PointerEventData eventData) => UpdatePad(eventData.position);
+        public void OnDrag(PointerEventData eventData)
+        {
+            if (enableMovementInput) UpdatePad(eventData.position);
+        }
 
-        public void OnPointerUp(PointerEventData eventData) => ResetPad();
+        public void OnPointerUp(PointerEventData eventData)
+        {
+            if (enableMovementInput) ResetPad(true);
+        }
 
         private void UpdatePad(Vector2 position)
         {
@@ -102,12 +111,12 @@ namespace Zircon.Mobile.Game.Input
                 knob.anchoredPosition = Vector2.ClampMagnitude(delta, knobRadiusPixels);
         }
 
-        private void ResetPad()
+        private void ResetPad(bool resetKnob)
         {
             dragging = false;
             direction = Vector2.zero;
             inputStrength = 0f;
-            if (knob != null)
+            if (resetKnob && knob != null)
                 knob.anchoredPosition = Vector2.zero;
         }
 
